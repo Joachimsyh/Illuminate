@@ -194,3 +194,81 @@ CREATE INDEX IF NOT EXISTS topups_created_at_idx ON topups(created_at);
 
 -- Idempotent migration for databases created before premium top-ups existed.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS premium_until TIMESTAMPTZ;
+
+-- Cached Agent 1 profile (skip re-extraction when source hash unchanged)
+CREATE TABLE IF NOT EXISTS user_profiles (
+  id                    TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  user_id               TEXT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+  headline              TEXT,
+  bio                   TEXT,
+  company               TEXT,
+  seniority             TEXT,
+  skills_json           TEXT NOT NULL DEFAULT '[]',
+  tech_stack_json       TEXT NOT NULL DEFAULT '[]',
+  interests_json        TEXT NOT NULL DEFAULT '[]',
+  locations_json        TEXT NOT NULL DEFAULT '[]',
+  event_types_json      TEXT NOT NULL DEFAULT '[]',
+  keywords_json         TEXT NOT NULL DEFAULT '[]',
+  raw_source            TEXT NOT NULL DEFAULT '',
+  source_hash           TEXT NOT NULL DEFAULT '',
+  selections_hash       TEXT NOT NULL DEFAULT '',
+  linkedin_snapshot_json TEXT NOT NULL DEFAULT '{}',
+  agent1_provider       TEXT,
+  extracted_at          TIMESTAMPTZ,
+  posts_synced_at       TIMESTAMPTZ,
+  age                   INTEGER,
+  life_status           TEXT,
+  place_of_work_study   TEXT,
+  agent_summary         TEXT,
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS user_profiles_source_hash_idx ON user_profiles(source_hash);
+
+-- Safe upgrades for existing databases
+ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS age INTEGER;
+ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS life_status TEXT;
+ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS place_of_work_study TEXT;
+ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS agent_summary TEXT;
+
+-- Individual LinkedIn / writing posts (auto-update when new ones appear)
+CREATE TABLE IF NOT EXISTS profile_posts (
+  id            TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  content       TEXT NOT NULL,
+  content_hash  TEXT NOT NULL,
+  source        TEXT NOT NULL DEFAULT 'writing_sample',
+  posted_at     TIMESTAMPTZ,
+  topics_json   TEXT NOT NULL DEFAULT '[]',
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (user_id, content_hash)
+);
+CREATE INDEX IF NOT EXISTS profile_posts_user_id_idx ON profile_posts(user_id);
+CREATE INDEX IF NOT EXISTS profile_posts_created_at_idx ON profile_posts(created_at);
+
+-- Knowledge graph for agents (nodes + edges per user)
+CREATE TABLE IF NOT EXISTS knowledge_nodes (
+  id          TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind        TEXT NOT NULL,
+  key         TEXT NOT NULL,
+  label       TEXT NOT NULL,
+  props_json  TEXT NOT NULL DEFAULT '{}',
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (user_id, kind, key)
+);
+CREATE INDEX IF NOT EXISTS knowledge_nodes_user_kind_idx ON knowledge_nodes(user_id, kind);
+
+CREATE TABLE IF NOT EXISTS knowledge_edges (
+  id           TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  from_node_id TEXT NOT NULL REFERENCES knowledge_nodes(id) ON DELETE CASCADE,
+  to_node_id   TEXT NOT NULL REFERENCES knowledge_nodes(id) ON DELETE CASCADE,
+  relation     TEXT NOT NULL,
+  weight       DOUBLE PRECISION NOT NULL DEFAULT 1,
+  props_json   TEXT NOT NULL DEFAULT '{}',
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (user_id, from_node_id, to_node_id, relation)
+);
+CREATE INDEX IF NOT EXISTS knowledge_edges_user_rel_idx ON knowledge_edges(user_id, relation);

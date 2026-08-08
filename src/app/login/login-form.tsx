@@ -5,9 +5,10 @@ import Link from "next/link";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Linkedin, Mail, Sparkles } from "lucide-react";
+import { ArrowLeft, Mail, Sparkles } from "lucide-react";
 import { MagneticButton, FadeIn } from "@/components/motion";
 import { PasswordInput } from "@/components/password-input";
+import { LinkedInAuthButton } from "@/components/linkedin-auth-button";
 
 type Step = "choose" | "password";
 
@@ -16,19 +17,32 @@ function LoginFormInner() {
   const searchParams = useSearchParams();
   const authError = searchParams.get("error");
 
+  function linkedInErrorMessage(code: string | null): string | null {
+    if (!code) return null;
+    switch (code) {
+      case "OAuthAccountNotLinked":
+        return "An account already exists with that email. Sign in with email/password once, or use the same LinkedIn email — linking is enabled; try again.";
+      case "OAuthCreateAccount":
+        return "Could not create your account from LinkedIn. Try email signup, then link LinkedIn.";
+      case "AccessDenied":
+        return "LinkedIn access was denied. Approve email/profile permissions and try again.";
+      case "Configuration":
+        return "LinkedIn is misconfigured. Check LINKEDIN_CLIENT_ID / SECRET and restart the app.";
+      case "OAuthCallback":
+      case "Callback":
+        return "LinkedIn sign-in failed during callback. Confirm the LinkedIn app redirect URI is exactly http://localhost:3000/api/auth/callback/linkedin and that “Sign In with LinkedIn using OpenID Connect” is enabled.";
+      default:
+        return `LinkedIn sign-in failed (${code}). Confirm redirect URI http://localhost:3000/api/auth/callback/linkedin, then try again.`;
+    }
+  }
+
   const [step, setStep] = useState<Step>("choose");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState<"linkedin" | "email" | null>(null);
+  const [loading, setLoading] = useState<"email" | null>(null);
   const [error, setError] = useState<string | null>(
-    authError ? "Sign-in failed. Try again or use email." : null
+    linkedInErrorMessage(authError)
   );
-
-  async function handleLinkedIn() {
-    setLoading("linkedin");
-    setError(null);
-    await signIn("linkedin", { callbackUrl: "/dashboard" });
-  }
 
   function handleEmailContinue(e: FormEvent) {
     e.preventDefault();
@@ -91,8 +105,8 @@ function LoginFormInner() {
           </FadeIn>
           <FadeIn delay={0.16}>
             <p className="mt-5 max-w-md text-lg text-mist-300">
-              Sign in with LinkedIn or email — sessions are stored securely and
-              we only scrape events you open.
+              Sign in with LinkedIn or email — we prefill Luma registrations
+              from your LinkedIn profile.
             </p>
           </FadeIn>
         </div>
@@ -113,16 +127,10 @@ function LoginFormInner() {
                   exit={{ opacity: 0, x: 8 }}
                   className="mt-6 space-y-4"
                 >
-                  <MagneticButton
-                    onClick={handleLinkedIn}
-                    disabled={loading !== null}
-                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#0A66C2] px-4 py-3.5 text-sm font-semibold text-white hover:bg-[#004182] disabled:opacity-60"
-                  >
-                    <Linkedin className="h-4 w-4" />
-                    {loading === "linkedin"
-                      ? "Redirecting…"
-                      : "Continue with LinkedIn"}
-                  </MagneticButton>
+                  <LinkedInAuthButton
+                    callbackUrl="/dashboard"
+                    label="Continue with LinkedIn"
+                  />
 
                   <div className="flex items-center gap-3 text-xs text-mist-400">
                     <span className="h-px flex-1 bg-white/10" />

@@ -27,6 +27,8 @@ export default async function EventDetailPage({
           userId: session.user.id,
           eventId: params.id,
           event,
+          // Prefill must be fast — LLM drafts happen only when applying without answers.
+          skipLlm: true,
         });
         filledAnswers = prepared.answers;
         formFields = prepared.formFields;
@@ -48,6 +50,7 @@ export default async function EventDetailPage({
             rawSource: user.rawSource,
             writingSamples: user.writingSamples,
             linkedinId: user.linkedinId,
+            agentSummary: user.bio,
           });
         }
       }
