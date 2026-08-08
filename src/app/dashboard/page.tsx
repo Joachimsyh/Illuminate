@@ -18,7 +18,9 @@ export default async function DashboardPage() {
   const stats = {
     total: applications.length,
     success: applications.filter((a) => a.status === "success").length,
-    pending: applications.filter((a) => a.status === "pending").length,
+    pending: applications.filter(
+      (a) => a.status === "pending" || a.status === "needs_verification"
+    ).length,
     failed: applications.filter((a) => a.status === "failed").length,
   };
 
@@ -37,16 +39,34 @@ export default async function DashboardPage() {
         skills: user?.skills ? user.skills.split("|").filter(Boolean) : [],
       }}
       stats={stats}
-      applications={applications.map((a) => ({
-        id: a.id,
-        eventId: a.eventId,
-        eventTitle: a.eventTitle,
-        eventUrl: a.eventUrl,
-        eventDate: a.eventDate,
-        status: a.status,
-        message: a.message,
-        appliedAt: a.appliedAt.toISOString(),
-      }))}
+      applications={applications.map((a) => {
+        let answers: Record<string, string> | null = null;
+        if (a.formPayload) {
+          try {
+            const parsed = JSON.parse(a.formPayload) as unknown;
+            if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+              answers = Object.fromEntries(
+                Object.entries(parsed as Record<string, unknown>).map(
+                  ([k, v]) => [k, v == null ? "" : String(v)]
+                )
+              );
+            }
+          } catch {
+            answers = null;
+          }
+        }
+        return {
+          id: a.id,
+          eventId: a.eventId,
+          eventTitle: a.eventTitle,
+          eventUrl: a.eventUrl,
+          eventDate: a.eventDate,
+          status: a.status,
+          message: a.message,
+          appliedAt: a.appliedAt.toISOString(),
+          answers,
+        };
+      })}
       eventsHref="/events"
     />
   );

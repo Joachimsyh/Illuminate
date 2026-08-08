@@ -8,7 +8,7 @@
     "start": "next start",
     "db:up": "docker compose up -d db",
     "db:schema": "node scripts/apply-schema.js",
-    "setup": "npm run db:up && node scripts/apply-schema.js",
+    "setup": "npm run db:up && node scripts/apply-schema.js && npm run playwright:install",
     "agent": "tsx scripts/agent-worker.ts",
     "playwright:install": "playwright install chromium",
     "docker:up": "docker compose up --build -d",

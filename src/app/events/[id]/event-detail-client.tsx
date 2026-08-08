@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import {
@@ -125,11 +126,17 @@ export function EventDetailClient({
                   This event appears sold out on Luma.
                 </div>
               ) : (
-                <LumaRegistrationForm
-                  eventId={event.slug}
-                  fields={event.formFields}
-                  initialAnswers={filledAnswers}
-                />
+                <Suspense
+                  fallback={
+                    <p className="text-sm text-mist-400">Loading form…</p>
+                  }
+                >
+                  <LumaRegistrationForm
+                    eventId={event.slug}
+                    fields={event.formFields}
+                    initialAnswers={filledAnswers}
+                  />
+                </Suspense>
               )}
             </section>
           </FadeIn>

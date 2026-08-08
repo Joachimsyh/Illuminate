@@ -193,10 +193,26 @@ export async function browserAssistLumaApply(
   input: BrowserApplyInput
 ): Promise<BrowserApplyResult> {
   const timeoutMs = input.timeoutMs ?? 5 * 60 * 1000;
-  const browser = await chromium.launch({
-    headless: false,
-    args: ["--disable-blink-features=AutomationControlled"],
-  });
+
+  let browser;
+  try {
+    browser = await chromium.launch({
+      headless: false,
+      args: ["--disable-blink-features=AutomationControlled"],
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const missingBrowser =
+      /Executable doesn't exist|browserType\.launch/i.test(message) ||
+      message.includes("playwright install");
+    return {
+      ok: false,
+      status: "failed",
+      message: missingBrowser
+        ? "Playwright Chromium is not installed. Run: npm run playwright:install — then try Finish captcha again."
+        : `Browser assist failed: ${message}`,
+    };
+  }
 
   try {
     const context = await browser.newContext({

@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   CheckCircle2,
@@ -39,6 +40,26 @@ function isLongText(field: FormField): boolean {
   );
 }
 
+function readStoredAnswers(eventId: string): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = sessionStorage.getItem(`illuminate:answers:${eventId}`);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {};
+    }
+    return Object.fromEntries(
+      Object.entries(parsed as Record<string, unknown>).map(([k, v]) => [
+        k,
+        v == null ? "" : String(v),
+      ])
+    );
+  } catch {
+    return {};
+  }
+}
+
 /**
  * The real Luma registration questions as an editable form,
  * prefilled from LinkedIn / profile / agent drafts.
@@ -54,11 +75,24 @@ export function LumaRegistrationForm({
   initialAnswers: Record<string, string>;
   disabled?: boolean;
 }) {
+  const searchParams = useSearchParams();
+  const wantAssist = searchParams.get("assist") === "1";
+  const assistStarted = useRef(false);
+
   const [answers, setAnswers] = useState<Record<string, string>>(() => {
+    const stored = readStoredAnswers(eventId);
     const next: Record<string, string> = {};
     for (const field of fields) {
       const key = fieldKey(field);
-      next[key] = initialAnswers[key] || field.value || "";
+      next[key] =
+        stored[key] || initialAnswers[key] || field.value || "";
+    }
+    // Also keep any extra keys from stored payload (name/email etc.)
+    for (const [key, value] of Object.entries(stored)) {
+      if (!next[key]) next[key] = value;
+    }
+    for (const [key, value] of Object.entries(initialAnswers)) {
+      if (!next[key]) next[key] = value;
     }
     return next;
   });
@@ -78,7 +112,10 @@ export function LumaRegistrationForm({
     setResult(null);
   }
 
-  async function submit(opts?: { browserAssist?: boolean; autoFallback?: boolean }) {
+  async function submit(opts?: {
+    browserAssist?: boolean;
+    autoFallback?: boolean;
+  }) {
     if (disabled || missingRequired.length) return;
 
     const usingBrowser = opts?.browserAssist === true;
@@ -138,6 +175,14 @@ export function LumaRegistrationForm({
     }
   }
 
+  useEffect(() => {
+    if (!wantAssist || assistStarted.current || disabled) return;
+    if (missingRequired.length > 0) return;
+    assistStarted.current = true;
+    void submit({ browserAssist: true, autoFallback: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on assist deep-link
+  }, [wantAssist, disabled, missingRequired.length]);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     await submit();
@@ -148,7 +193,8 @@ export function LumaRegistrationForm({
   const showBrowser =
     result?.browserAssistAvailable ||
     result?.status === "needs_verification" ||
-    result?.status === "failed";
+    result?.status === "failed" ||
+    wantAssist;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -159,6 +205,12 @@ export function LumaRegistrationForm({
         <p className="mt-1 text-sm text-mist-400">
           Prefills come from your LinkedIn profile. Submit tries Luma directly,
           then opens Browser assist automatically when a captcha is required.
+          {wantAssist ? (
+            <span className="mt-1 block text-amber-200/90">
+              Resuming verification — opening autofilled Luma so you can solve
+              the captcha.
+            </span>
+          ) : null}
         </p>
       </div>
 

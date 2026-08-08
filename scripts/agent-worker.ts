@@ -17,12 +17,18 @@ async function tick() {
   const started = new Date().toISOString();
   console.log(`[agent] cycle start ${started}`);
   try {
-    const result = await runAgentCycle();
+    const result = await runAgentCycle({
+      onProgress: (e) => {
+        console.log(`[agent] ${e.phase}: ${e.message}`);
+      },
+    });
     console.log(
       `[agent] users=${result.usersProcessed} attempted=${result.applicationsAttempted} ok=${result.successes} fail=${result.failures}`
     );
     for (const d of result.details) {
-      console.log(`  - ${d.userId.slice(0, 8)}… → ${d.eventId}: ${d.status}`);
+      console.log(
+        `  - ${d.eventTitle || d.eventId}: ${d.status} — ${d.message}`
+      );
     }
   } catch (err) {
     console.error("[agent] cycle failed", err);
