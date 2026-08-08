@@ -1,10 +1,20 @@
 import axios from "axios";
-import { prisma } from "@/lib/prisma";
+import {
+  findApplication,
+  findEventDetailBySlug,
+  findUserById,
+  upsertApplication,
+} from "@/lib/repos";
 import {
   scrapeOrFallback,
   type FormField,
   type LumaEventData,
 } from "@/lib/luma-scraper";
+import {
+  buildProfileAnswers,
+  fillBlanksWithAgent,
+  type ProfileForFill,
+} from "@/lib/agent-fill";
 
 export type ApplyInput = {
   userId: string;
@@ -24,67 +34,87 @@ export type ApplyResult = {
   };
   applicationId?: string;
   demo?: boolean;
+  filledAnswers?: Record<string, string>;
 };
 
-function buildAnswers(
-  fields: FormField[],
-  user: {
-    name: string | null;
-    email: string | null;
-    company: string | null;
-    headline: string | null;
-    bio: string | null;
-    linkedinId: string | null;
-  },
-  overrides: Record<string, string> = {}
-): Record<string, string> {
-  const answers: Record<string, string> = { ...overrides };
+function toProfile(user: {
+  registrationName: string | null;
+  registrationEmail: string | null;
+  name: string | null;
+  email: string | null;
+  company: string | null;
+  headline: string | null;
+  bio: string | null;
+  location: string | null;
+  skills: string;
+  techStack: string;
+  interests: string;
+  seniority: string | null;
+  rawSource: string;
+  writingSamples: string;
+  linkedinId: string | null;
+}): ProfileForFill {
+  return {
+    name: user.registrationName || user.name,
+    email: user.registrationEmail || user.email,
+    company: user.company,
+    headline: user.headline,
+    bio: user.bio || user.rawSource?.slice(0, 800) || null,
+    location: user.location,
+    skills: user.skills || "",
+    techStack: user.techStack || "",
+    interests: user.interests || "",
+    seniority: user.seniority,
+    rawSource: user.rawSource || "",
+    writingSamples: user.writingSamples || "[]",
+    linkedinId: user.linkedinId,
+  };
+}
 
-  for (const field of fields) {
-    const key = field.name || field.id;
-    if (answers[key]) continue;
-
-    const label = field.label.toLowerCase();
-
-    if (field.type === "email" || label.includes("email")) {
-      answers[key] = user.email || "";
-    } else if (
-      label.includes("name") ||
-      key === "name" ||
-      key === "full_name"
-    ) {
-      answers[key] = user.name || "";
-    } else if (label.includes("company") || label.includes("organization")) {
-      answers[key] = user.company || "Independent";
-    } else if (label.includes("linkedin")) {
-      answers[key] = user.linkedinId
-        ? `https://www.linkedin.com/in/${user.linkedinId}`
-        : "";
-    } else if (
-      label.includes("title") ||
-      label.includes("role") ||
-      label.includes("headline")
-    ) {
-      answers[key] = user.headline || "Builder";
-    } else if (
-      label.includes("why") ||
-      label.includes("bio") ||
-      label.includes("about") ||
-      field.type === "textarea"
-    ) {
-      answers[key] =
-        user.bio ||
-        `Excited to attend — I'm ${user.name || "a builder"} working on products at the intersection of AI and community.`;
-    } else if (field.required) {
-      answers[key] = overrides[key] || "N/A";
-    }
+function fieldsFromStoredDetails(
+  registrationQuestionsJson: string | null | undefined
+): FormField[] {
+  if (!registrationQuestionsJson) return [];
+  try {
+    const parsed = JSON.parse(registrationQuestionsJson) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((q, i) => {
+      const question = q as Record<string, unknown>;
+      const id = String(question.id || question.question_id || `q-${i}`);
+      return {
+        id,
+        name: String(question.name || question.id || id),
+        label: String(question.label || question.question || "Question"),
+        type: String(
+          question.question_type || question.type || question.input_type || "text"
+        ),
+        required: Boolean(question.required ?? question.is_required),
+        options: Array.isArray(question.options)
+          ? question.options.map(String)
+          : undefined,
+      };
+    });
+  } catch {
+    return [];
   }
+}
 
-  return answers;
+function mergeFormFields(
+  primary: FormField[],
+  extra: FormField[]
+): FormField[] {
+  const out: FormField[] = [];
+  const seen = new Set<string>();
+  for (const f of [...primary, ...extra]) {
+    const key = f.name || f.id;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(f);
+  }
+  return out;
 }
 
 function validateCsrf(event: LumaEventData): void {
-  // Demo / fallback tokens are accepted; live tokens must be non-empty when present in HTML
   if (event.csrfToken === "") {
     throw new Error("Invalid CSRF token from Luma form");
   }
@@ -130,8 +160,12 @@ async function submitToLuma(
       return { ok: true, status: response.status, body, demo: false };
     }
 
-    // Luma often requires a Luma session cookie — fall back to demo submit for hackathon MVP
-    if (demoSubmit && (response.status === 401 || response.status === 403 || response.status >= 400)) {
+    if (
+      demoSubmit &&
+      (response.status === 401 ||
+        response.status === 403 ||
+        response.status >= 400)
+    ) {
       return {
         ok: true,
         status: 200,
@@ -163,9 +197,45 @@ async function submitToLuma(
   }
 }
 
+/**
+ * Build answers from profile + LLM for open questions (used by apply + preview).
+ */
+export async function prepareRegistrationAnswers(input: {
+  userId: string;
+  eventId: string;
+  answers?: Record<string, string>;
+  event?: LumaEventData;
+}): Promise<{
+  user: ProfileForFill;
+  event: LumaEventData;
+  answers: Record<string, string>;
+  formFields: FormField[];
+}> {
+  const row = await findUserById(input.userId);
+  if (!row) throw new Error("User not found");
+  const user = toProfile(row);
+
+  const event = input.event || (await scrapeOrFallback(input.eventId));
+  const stored = await findEventDetailBySlug(event.slug);
+  const fromDetails = fieldsFromStoredDetails(stored?.registrationQuestionsJson);
+  const formFields = mergeFormFields(event.formFields, fromDetails);
+
+  let answers = buildProfileAnswers(formFields, user, input.answers || {});
+  answers = await fillBlanksWithAgent({
+    fields: formFields,
+    existing: answers,
+    user,
+    eventTitle: event.title,
+    eventDescription:
+      stored?.descriptionText || event.description || undefined,
+  });
+
+  return { user, event: { ...event, formFields }, answers, formFields };
+}
+
 export async function autoApply(input: ApplyInput): Promise<ApplyResult> {
-  const user = await prisma.user.findUnique({ where: { id: input.userId } });
-  if (!user) {
+  const userRow = await findUserById(input.userId);
+  if (!userRow) {
     return {
       success: false,
       status: "failed",
@@ -174,14 +244,7 @@ export async function autoApply(input: ApplyInput): Promise<ApplyResult> {
     };
   }
 
-  const applyName = user.registrationName || user.name;
-  const applyEmail = user.registrationEmail || user.email;
-
-  const existing = await prisma.application.findUnique({
-    where: {
-      userId_eventId: { userId: input.userId, eventId: input.eventId },
-    },
-  });
+  const existing = await findApplication(input.userId, input.eventId);
 
   if (existing && existing.status === "success") {
     return {
@@ -198,23 +261,26 @@ export async function autoApply(input: ApplyInput): Promise<ApplyResult> {
     };
   }
 
-  const event = await scrapeOrFallback(input.eventId);
+  let prepared;
+  try {
+    prepared = await prepareRegistrationAnswers({
+      userId: input.userId,
+      eventId: input.eventId,
+      answers: input.answers,
+    });
+  } catch (err) {
+    return {
+      success: false,
+      status: "failed",
+      message: err instanceof Error ? err.message : "Could not prepare answers",
+      event: { id: input.eventId, title: "", url: "", startAt: null },
+    };
+  }
+
+  const { event, answers, formFields } = prepared;
   validateCsrf(event);
 
-  const answers = buildAnswers(
-    event.formFields,
-    {
-      name: applyName,
-      email: applyEmail,
-      company: user.company,
-      headline: user.headline,
-      bio: user.bio || user.rawSource?.slice(0, 500) || null,
-      linkedinId: user.linkedinId,
-    },
-    input.answers || {}
-  );
-
-  const missing = event.formFields
+  const missing = formFields
     .filter((f) => f.required)
     .filter((f) => !answers[f.name || f.id]?.trim());
 
@@ -229,6 +295,7 @@ export async function autoApply(input: ApplyInput): Promise<ApplyResult> {
         url: event.sourceUrl,
         startAt: event.startAt,
       },
+      filledAnswers: answers,
     };
   }
 
@@ -250,33 +317,16 @@ export async function autoApply(input: ApplyInput): Promise<ApplyResult> {
         : "Successfully registered for the event!"
     : `Registration failed (HTTP ${submission.status})`;
 
-  const application = await prisma.application.upsert({
-    where: {
-      userId_eventId: { userId: input.userId, eventId: event.slug },
-    },
-    update: {
-      eventTitle: event.title,
-      eventUrl: event.sourceUrl,
-      eventDate: event.startAt,
-      status,
-      message,
-      formPayload: JSON.stringify(answers),
-      responseBody: submission.body.slice(0, 4000),
-      appliedAt: new Date(),
-      notifiedAt: submission.ok ? new Date() : null,
-    },
-    create: {
-      userId: input.userId,
-      eventId: event.slug,
-      eventTitle: event.title,
-      eventUrl: event.sourceUrl,
-      eventDate: event.startAt,
-      status,
-      message,
-      formPayload: JSON.stringify(answers),
-      responseBody: submission.body.slice(0, 4000),
-      notifiedAt: submission.ok ? new Date() : null,
-    },
+  const application = await upsertApplication({
+    userId: input.userId,
+    eventId: event.slug,
+    eventTitle: event.title,
+    eventUrl: event.sourceUrl,
+    eventDate: event.startAt,
+    status,
+    message,
+    formPayload: JSON.stringify(answers),
+    responseBody: submission.body.slice(0, 4000),
   });
 
   return {
@@ -291,5 +341,6 @@ export async function autoApply(input: ApplyInput): Promise<ApplyResult> {
     },
     applicationId: application.id,
     demo: submission.demo,
+    filledAnswers: answers,
   };
 }

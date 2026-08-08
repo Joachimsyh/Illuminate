@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSession } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { updateUser, upsertLumaConnection } from "@/lib/repos";
 import { encryptSecret } from "@/lib/crypto";
 import { fetchAndParseLumaIcs, isValidLumaIcsUrl } from "@/lib/luma-ics";
 
@@ -44,27 +44,15 @@ export async function POST(request: Request) {
       );
     }
 
-    await prisma.lumaConnection.upsert({
-      where: { userId: session.user.id },
-      update: {
-        icsUrlEncrypted: encryptSecret(icsUrl),
-        icsUrlLastOkAt: new Date(),
-        status: "active",
-        previewJson: JSON.stringify(result.events.slice(0, 20)),
-      },
-      create: {
-        userId: session.user.id,
-        icsUrlEncrypted: encryptSecret(icsUrl),
-        icsUrlLastOkAt: new Date(),
-        status: "active",
-        previewJson: JSON.stringify(result.events.slice(0, 20)),
-      },
+    await upsertLumaConnection({
+      userId: session.user.id,
+      icsUrlEncrypted: encryptSecret(icsUrl),
+      icsUrlLastOkAt: new Date(),
+      status: "active",
+      previewJson: JSON.stringify(result.events.slice(0, 20)),
     });
 
-    await prisma.user.update({
-      where: { id: session.user.id },
-      data: { onboardingStep: 3 },
-    });
+    await updateUser(session.user.id, { onboardingStep: 3 });
 
     return NextResponse.json({
       ok: true,

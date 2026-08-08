@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import { listAgentUsers } from "@/lib/repos";
 import { discoverEventsForProfile } from "@/lib/luma-scraper";
 import { autoApply } from "@/lib/auto-apply";
 
@@ -16,9 +16,7 @@ export type AgentRunResult = {
 };
 
 export async function runAgentCycle(): Promise<AgentRunResult> {
-  const users = await prisma.user.findMany({
-    where: { agentEnabled: true },
-  });
+  const users = await listAgentUsers();
 
   const details: AgentRunResult["details"] = [];
   let applicationsAttempted = 0;

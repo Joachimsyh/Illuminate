@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSession } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { findLumaConnection, findUserById, updateUser } from "@/lib/repos";
 import { skillsToKeywords } from "@/lib/skills";
 import {
   mergeAgent1WithSelections,
@@ -45,14 +45,12 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const user = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    include: { lumaConnection: true },
-  });
-
+  const user = await findUserById(session.user.id);
   if (!user) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
+
+  const lumaConnection = await findLumaConnection(session.user.id);
 
   let writingSamples: string[] = [];
   try {
@@ -63,7 +61,7 @@ export async function GET() {
 
   let icsPreview: unknown[] = [];
   try {
-    icsPreview = JSON.parse(user.lumaConnection?.previewJson || "[]");
+    icsPreview = JSON.parse(lumaConnection?.previewJson || "[]");
   } catch {
     icsPreview = [];
   }
@@ -81,8 +79,8 @@ export async function GET() {
     writingSamples,
     onboardingCompleted: user.onboardingCompleted,
     onboardingStep: user.onboardingStep,
-    hasLumaConnection: Boolean(user.lumaConnection),
-    lumaStatus: user.lumaConnection?.status || null,
+    hasLumaConnection: Boolean(lumaConnection),
+    lumaStatus: lumaConnection?.status || null,
     icsPreview,
     catalogs: {
       locations: EVENT_LOCATIONS,
@@ -108,14 +106,11 @@ export async function POST(request: Request) {
   }
 
   if (parsed.data.step === 2) {
-    const user = await prisma.user.update({
-      where: { id: session.user.id },
-      data: {
-        registrationName: parsed.data.registrationName,
-        registrationEmail: parsed.data.registrationEmail.toLowerCase(),
-        name: parsed.data.registrationName,
-        onboardingStep: 3,
-      },
+    const user = await updateUser(session.user.id, {
+      registrationName: parsed.data.registrationName,
+      registrationEmail: parsed.data.registrationEmail.toLowerCase(),
+      name: parsed.data.registrationName,
+      onboardingStep: 3,
     });
 
     return NextResponse.json({
@@ -187,23 +182,20 @@ export async function POST(request: Request) {
     }
   }
 
-  const user = await prisma.user.update({
-    where: { id: session.user.id },
-    data: {
-      location: locations.join("|"),
-      skills: merged.skills.join("|"),
-      interests: merged.interests.join("|"),
-      techStack: merged.techStack.join("|"),
-      seniority: merged.seniority,
-      eventTypes: merged.eventTypes.join("|"),
-      headline: merged.headline,
-      bio: merged.bio,
-      rawSource,
-      writingSamples: JSON.stringify(samples),
-      agentKeywords: merged.keywords.join(","),
-      onboardingStep: 4,
-      onboardingCompleted: true,
-    },
+  const user = await updateUser(session.user.id, {
+    location: locations.join("|"),
+    skills: merged.skills.join("|"),
+    interests: merged.interests.join("|"),
+    techStack: merged.techStack.join("|"),
+    seniority: merged.seniority,
+    eventTypes: merged.eventTypes.join("|"),
+    headline: merged.headline,
+    bio: merged.bio,
+    rawSource,
+    writingSamples: JSON.stringify(samples),
+    agentKeywords: merged.keywords.join(","),
+    onboardingStep: 4,
+    onboardingCompleted: true,
   });
 
   return NextResponse.json({

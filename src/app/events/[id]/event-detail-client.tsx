@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { ApplyButton } from "@/components/apply-button";
 import { FadeIn, Stagger, StaggerItem } from "@/components/motion";
+import { formatDateTime } from "@/lib/format-date";
 import type { FormField } from "@/lib/luma-scraper";
 
 type EventView = {
@@ -42,7 +43,13 @@ type EventView = {
   sourceUrl: string;
 };
 
-export function EventDetailClient({ event }: { event: EventView }) {
+export function EventDetailClient({
+  event,
+  filledAnswers = {},
+}: {
+  event: EventView;
+  filledAnswers?: Record<string, string>;
+}) {
   return (
     <div className="mx-auto max-w-6xl px-5 py-8">
       <FadeIn>
@@ -84,10 +91,7 @@ export function EventDetailClient({ event }: { event: EventView }) {
                   {event.startAt && (
                     <span className="inline-flex items-center gap-1.5">
                       <Calendar className="h-4 w-4 text-lumen-300" />
-                      {new Date(event.startAt).toLocaleString(undefined, {
-                        dateStyle: "medium",
-                        timeStyle: "short",
-                      })}
+                      {formatDateTime(event.startAt)}
                       {event.timezone ? ` (${event.timezone})` : ""}
                     </span>
                   )}
@@ -118,28 +122,44 @@ export function EventDetailClient({ event }: { event: EventView }) {
           <FadeIn delay={0.18}>
             <section className="mt-8">
               <h2 className="font-display text-xl text-mist-100">
-                Scraped registration fields
+                Auto-filled from your profile
               </h2>
               <p className="mt-1 text-sm text-mist-400">
-                Parsed from the public page + hidden CSRF token for submit.
+                Identity from onboarding/profile; open questions drafted by the
+                agent from your CV, skills, and interests.
               </p>
               <Stagger className="mt-4 space-y-2">
-                {event.formFields.map((field) => (
-                  <StaggerItem key={field.id}>
-                    <div className="flex items-center justify-between rounded-xl bg-white/[0.03] px-4 py-3 ring-1 ring-white/5">
-                      <div>
-                        <p className="text-sm text-mist-100">{field.label}</p>
-                        <p className="text-xs text-mist-400">
-                          {field.type}
-                          {field.required ? " · required" : ""}
-                        </p>
+                {event.formFields.map((field) => {
+                  const key = field.name || field.id;
+                  const value = filledAnswers[key];
+                  return (
+                    <StaggerItem key={field.id}>
+                      <div className="rounded-xl bg-white/[0.03] px-4 py-3 ring-1 ring-white/5">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm text-mist-100">{field.label}</p>
+                            <p className="text-xs text-mist-400">
+                              {field.type}
+                              {field.required ? " · required" : ""}
+                            </p>
+                          </div>
+                          {field.required && (
+                            <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-lumen-300/70" />
+                          )}
+                        </div>
+                        {value ? (
+                          <p className="mt-2 whitespace-pre-wrap text-sm text-lumen-100/90">
+                            {value}
+                          </p>
+                        ) : (
+                          <p className="mt-2 text-xs text-mist-500">
+                            Agent will draft this on apply
+                          </p>
+                        )}
                       </div>
-                      {field.required && (
-                        <Lock className="h-3.5 w-3.5 text-lumen-300/70" />
-                      )}
-                    </div>
-                  </StaggerItem>
-                ))}
+                    </StaggerItem>
+                  );
+                })}
               </Stagger>
             </section>
           </FadeIn>
@@ -155,8 +175,8 @@ export function EventDetailClient({ event }: { event: EventView }) {
                 Register in one click
               </h2>
               <p className="mt-2 text-sm text-mist-400">
-                Fills your LinkedIn profile into the scraped form and POSTs to
-                Luma&apos;s registration endpoint.
+                Uses your registration name/email, skills, and CV from profile
+                to fill every blank, then submits to Luma.
               </p>
             </div>
 

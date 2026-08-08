@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSession } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { findUserById, updateUser } from "@/lib/repos";
 import { skillsToKeywords } from "@/lib/skills";
 import {
   mergeAgent1WithSelections,
@@ -32,9 +32,7 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const user = await prisma.user.findUnique({
-    where: { id: session.user.id },
-  });
+  const user = await findUserById(session.user.id);
   if (!user) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
@@ -85,9 +83,7 @@ export async function PATCH(request: Request) {
       ? parsed.data.rawSource.trim()
       : undefined;
 
-  const existing = await prisma.user.findUnique({
-    where: { id: session.user.id },
-  });
+  const existing = await findUserById(session.user.id);
   if (!existing) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
@@ -136,20 +132,17 @@ export async function PATCH(request: Request) {
     }
   }
 
-  const user = await prisma.user.update({
-    where: { id: session.user.id },
-    data: {
-      location: nextLocations.join("|"),
-      interests: nextInterests.join("|"),
-      skills: nextSkills.join("|"),
-      rawSource: nextRaw,
-      techStack,
-      seniority,
-      eventTypes,
-      headline,
-      bio,
-      agentKeywords,
-    },
+  const user = await updateUser(session.user.id, {
+    location: nextLocations.join("|"),
+    interests: nextInterests.join("|"),
+    skills: nextSkills.join("|"),
+    rawSource: nextRaw,
+    techStack,
+    seniority,
+    eventTypes,
+    headline,
+    bio,
+    agentKeywords,
   });
 
   return NextResponse.json({

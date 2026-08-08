@@ -28,7 +28,8 @@ function extOf(filename: string): string {
 function looksLikeBinary(buf: Buffer): boolean {
   const sample = buf.subarray(0, Math.min(buf.length, 800));
   let weird = 0;
-  for (const b of sample) {
+  for (let i = 0; i < sample.length; i++) {
+    const b = sample[i];
     if (b === 0) return true;
     if (b < 7 || (b > 14 && b < 32 && b !== 9 && b !== 10 && b !== 13)) weird++;
   }
@@ -77,8 +78,8 @@ async function extractOdt(buf: Buffer): Promise<string> {
   const latin = buf.toString("latin1");
   // Pull text:p / text:h payloads if content.xml is stored uncompressed
   const chunks = [
-    ...latin.matchAll(/<text:p[^>]*>([\s\S]*?)<\/text:p>/g),
-    ...latin.matchAll(/<text:h[^>]*>([\s\S]*?)<\/text:h>/g),
+    ...Array.from(latin.matchAll(/<text:p[^>]*>([\s\S]*?)<\/text:p>/g)),
+    ...Array.from(latin.matchAll(/<text:h[^>]*>([\s\S]*?)<\/text:h>/g)),
   ].map((m) => stripHtml(m[1] || ""));
 
   const joined = chunks.filter((c) => c.length > 2).join("\n").trim();

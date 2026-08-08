@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  ArrowLeft,
   Calendar,
   Check,
   ExternalLink,
@@ -25,6 +26,7 @@ import {
 } from "@/lib/profile-options";
 import { CV_ACCEPT } from "@/lib/cv-constants";
 import { FadeIn, MagneticButton } from "@/components/motion";
+import { formatDateTime } from "@/lib/format-date";
 
 type IcsPreview = {
   uid: string;
@@ -372,6 +374,27 @@ export function OnboardingClient({ initial }: Props) {
             transition={{ type: "spring", stiffness: 200, damping: 28 }}
           />
         </div>
+
+        {(step > 1 || (step === 4 && floatPage > 0)) && (
+          <button
+            type="button"
+            onClick={() => {
+              setError(null);
+              if (step === 4 && floatPage > 0) {
+                setFloatPage((p) => (p - 1) as 0 | 1 | 2 | 3);
+                return;
+              }
+              if (step > 1) {
+                if (step === 4) setFloatPage(0);
+                setStep((s) => s - 1);
+              }
+            }}
+            className="mt-4 inline-flex items-center gap-1.5 text-sm text-mist-400 transition hover:text-mist-100"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back
+          </button>
+        )}
       </div>
 
       <div className="mt-8">
@@ -545,7 +568,7 @@ export function OnboardingClient({ initial }: Props) {
                         {ev.start && (
                           <span className="text-mist-400">
                             {" "}
-                            · {new Date(ev.start).toLocaleString()}
+                            · {formatDateTime(ev.start)}
                           </span>
                         )}
                       </li>

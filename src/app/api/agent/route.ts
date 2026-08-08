@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSession } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { findUserById, updateUser } from "@/lib/repos";
 import { runAgentCycle } from "@/lib/agent";
 
 const settingsSchema = z.object({
@@ -16,10 +16,10 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const user = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    select: { agentEnabled: true, agentKeywords: true },
-  });
+  const row = await findUserById(session.user.id);
+  const user = row
+    ? { agentEnabled: row.agentEnabled, agentKeywords: row.agentKeywords }
+    : null;
 
   return NextResponse.json({ agent: user });
 }
@@ -40,16 +40,13 @@ export async function POST(request: Request) {
     parsed.data.agentEnabled !== undefined ||
     parsed.data.agentKeywords !== undefined
   ) {
-    await prisma.user.update({
-      where: { id: session.user.id },
-      data: {
-        ...(parsed.data.agentEnabled !== undefined
-          ? { agentEnabled: parsed.data.agentEnabled }
-          : {}),
-        ...(parsed.data.agentKeywords !== undefined
-          ? { agentKeywords: parsed.data.agentKeywords }
-          : {}),
-      },
+    await updateUser(session.user.id, {
+      ...(parsed.data.agentEnabled !== undefined
+        ? { agentEnabled: parsed.data.agentEnabled }
+        : {}),
+      ...(parsed.data.agentKeywords !== undefined
+        ? { agentKeywords: parsed.data.agentKeywords }
+        : {}),
     });
   }
 
@@ -58,10 +55,10 @@ export async function POST(request: Request) {
     run = await runAgentCycle();
   }
 
-  const user = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    select: { agentEnabled: true, agentKeywords: true },
-  });
+  const row = await findUserById(session.user.id);
+  const user = row
+    ? { agentEnabled: row.agentEnabled, agentKeywords: row.agentKeywords }
+    : null;
 
   return NextResponse.json({ agent: user, run });
 }

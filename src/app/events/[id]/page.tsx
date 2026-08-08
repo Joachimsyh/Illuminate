@@ -1,4 +1,8 @@
 import Link from "next/link";
+import { getSession } from "@/lib/auth";
+import { prepareRegistrationAnswers } from "@/lib/auto-apply";
+import { buildProfileAnswers } from "@/lib/agent-fill";
+import { findUserById } from "@/lib/repos";
 import { scrapeOrFallback } from "@/lib/luma-scraper";
 import { EventDetailClient } from "./event-detail-client";
 
@@ -10,15 +14,54 @@ export default async function EventDetailPage({
   params: { id: string };
 }) {
   try {
+    const session = await getSession();
     const event = await scrapeOrFallback(params.id);
+
+    let filledAnswers: Record<string, string> = {};
+    let formFields = event.formFields;
+
+    if (session?.user?.id) {
+      try {
+        // Full agent fill (profile + LLM) so the page shows real drafts
+        const prepared = await prepareRegistrationAnswers({
+          userId: session.user.id,
+          eventId: params.id,
+          event,
+        });
+        filledAnswers = prepared.answers;
+        formFields = prepared.formFields;
+      } catch {
+        // Fast heuristic preview if LLM is unavailable
+        const user = await findUserById(session.user.id);
+        if (user) {
+          filledAnswers = buildProfileAnswers(event.formFields, {
+            name: user.registrationName || user.name,
+            email: user.registrationEmail || user.email,
+            company: user.company,
+            headline: user.headline,
+            bio: user.bio,
+            location: user.location,
+            skills: user.skills,
+            techStack: user.techStack,
+            interests: user.interests,
+            seniority: user.seniority,
+            rawSource: user.rawSource,
+            writingSamples: user.writingSamples,
+            linkedinId: user.linkedinId,
+          });
+        }
+      }
+    }
+
     return (
       <EventDetailClient
         event={{
           ...event,
+          formFields,
           hosts: event.hosts,
-          formFields: event.formFields,
           ticketTypes: event.ticketTypes,
         }}
+        filledAnswers={filledAnswers}
       />
     );
   } catch {

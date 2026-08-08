@@ -1,18 +1,16 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { findLumaConnection, findUserById } from "@/lib/repos";
 import { OnboardingClient } from "./onboarding-client";
 
 export default async function OnboardingPage() {
   const session = await getSession();
   if (!session?.user?.id) redirect("/login");
 
-  const user = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    include: { lumaConnection: true },
-  });
-
+  const user = await findUserById(session.user.id);
   if (!user) redirect("/login");
+
+  const lumaConnection = await findLumaConnection(session.user.id);
 
   let writingSamples: string[] = [];
   try {
@@ -28,7 +26,7 @@ export default async function OnboardingPage() {
     location: string | null;
   }[] = [];
   try {
-    icsPreview = JSON.parse(user.lumaConnection?.previewJson || "[]");
+    icsPreview = JSON.parse(lumaConnection?.previewJson || "[]");
   } catch {
     icsPreview = [];
   }
@@ -50,7 +48,7 @@ export default async function OnboardingPage() {
         rawSource: user.rawSource || "",
         writingSamples,
         onboardingStep: user.onboardingCompleted ? 4 : user.onboardingStep || 1,
-        hasLumaConnection: Boolean(user.lumaConnection),
+        hasLumaConnection: Boolean(lumaConnection),
         icsPreview,
       }}
     />

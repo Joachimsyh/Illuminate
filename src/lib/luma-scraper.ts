@@ -1,6 +1,5 @@
 import * as cheerio from "cheerio";
 import axios from "axios";
-import { LUMA_LOCATION_FEEDS, LUMA_TOPIC_FEEDS } from "@/lib/luma-feeds";
 
 export type FormField = {
   id: string;
@@ -394,27 +393,6 @@ export type DiscoverEvent = {
   matchedTopics?: string[];
 };
 
-type RawDiscoverEntry = {
-  api_id?: string;
-  start_at?: string;
-  guest_count?: number;
-  event?: {
-    api_id?: string;
-    name?: string;
-    url?: string;
-    start_at?: string;
-    cover_url?: string;
-    geo_address_info?: {
-      city?: string;
-      region?: string;
-      country?: string;
-      full_address?: string;
-      address?: string;
-    };
-    location_type?: string;
-  };
-};
-
 export type DiscoverFeedAttempt = {
   label: string;
   url: string;
@@ -432,349 +410,33 @@ export type DiscoverResult = {
   error?: string;
 };
 
-function buildCurlCommand(url: string): string {
-  return `curl -sS -H "Accept: application/json" -H "Origin: https://luma.com" -H "Referer: https://luma.com/" "${url}"`;
-}
-
-async function fetchDiscoverEntries(params: {
-  label: string;
-  placeApiId?: string;
-  categoryApiId?: string;
-  limit?: number;
-}): Promise<{ entries: RawDiscoverEntry[]; attempt: DiscoverFeedAttempt }> {
-  const limit = params.limit ?? 25;
-  const qs = new URLSearchParams({
-    pagination_limit: String(limit),
-  });
-  if (params.placeApiId) {
-    qs.set("discover_place_api_id", params.placeApiId);
-  }
-  if (params.categoryApiId) {
-    qs.set("discover_category_api_id", params.categoryApiId);
-  }
-
-  const url = `https://api.lu.ma/discover/get-paginated-events?${qs}`;
-  const command = buildCurlCommand(url);
-
-  try {
-    const response = await axios.get<{ entries?: RawDiscoverEntry[] }>(url, {
-      headers: {
-        "User-Agent": UA,
-        Accept: "application/json",
-        Origin: "https://luma.com",
-        Referer: "https://luma.com/",
-      },
-      timeout: 20000,
-      validateStatus: () => true,
-    });
-
-    if (response.status >= 400) {
-      return {
-        entries: [],
-        attempt: {
-          label: params.label,
-          url,
-          command,
-          ok: false,
-          status: response.status,
-          count: 0,
-          error: `HTTP ${response.status}`,
-        },
-      };
-    }
-
-    const entries = Array.isArray(response.data?.entries)
-      ? response.data.entries
-      : [];
-
-    return {
-      entries,
-      attempt: {
-        label: params.label,
-        url,
-        command,
-        ok: true,
-        status: response.status,
-        count: entries.length,
-      },
-    };
-  } catch (err) {
-    return {
-      entries: [],
-      attempt: {
-        label: params.label,
-        url,
-        command,
-        ok: false,
-        count: 0,
-        error: err instanceof Error ? err.message : "Request failed",
-      },
-    };
-  }
-}
-
-function entryToDiscoverEvent(entry: RawDiscoverEntry): DiscoverEvent | null {
-  const ev = entry.event;
-  if (!ev?.name || !ev.url) return null;
-  const geo = ev.geo_address_info;
-  const location =
-    pickString(geo?.full_address, geo?.address, geo?.city) ||
-    [geo?.city, geo?.region, geo?.country].filter(Boolean).join(", ") ||
-    (ev.location_type === "online" ? "Online" : null);
-
-  return {
-    id: normalizeEventId(ev.url),
-    title: ev.name,
-    startAt: pickString(entry.start_at, ev.start_at),
-    location,
-    coverUrl: pickString(ev.cover_url) || null,
-    url: `https://luma.com/${normalizeEventId(ev.url)}`,
-    guestCount: Number(entry.guest_count || 0) || 0,
-  };
-}
-
-function matchesLocation(
-  event: DiscoverEvent,
-  locations: string[]
-): string[] {
-  const hay = `${event.location || ""} ${event.title}`.toLowerCase();
-  return locations.filter((loc) => hay.includes(loc.toLowerCase()));
-}
-
-function matchesTopic(
-  event: DiscoverEvent,
-  topics: string[],
-  fromTopicFeeds: Set<string>
-): string[] {
-  const hay = `${event.title} ${event.location || ""}`.toLowerCase();
-  const hit: string[] = [];
-  for (const topic of topics) {
-    if (fromTopicFeeds.has(`${event.id}::${topic}`)) {
-      hit.push(topic);
-      continue;
-    }
-    const feed = LUMA_TOPIC_FEEDS[topic];
-    if (!feed) continue;
-    if (
-      feed.keywords.some((k) => hay.includes(k)) ||
-      hay.includes(topic.toLowerCase())
-    ) {
-      hit.push(topic);
-    }
-  }
-  return hit;
-}
-
 /**
- * Scrape Luma city + topic discover feeds for the user's selections.
- * - default: closest matching upcoming events (limit)
- * - mode "all": every real upcoming event from selected location/topic feeds (no demos)
+ * Discover events by GETting luma.com city/topic pages, inserting new rows
+ * into the Event table (existing slugs are discarded), then reading from DB.
  */
 export async function discoverEventsForProfile(input: {
   locations?: string[];
   interests?: string[];
   limit?: number;
   mode?: "match" | "all";
-}): Promise<DiscoverResult> {
-  const mode = input.mode || "match";
-  const limit = input.limit ?? (mode === "all" ? 100 : 10);
-  const perFeed = mode === "all" ? 50 : 30;
-
-  const locations = (input.locations || []).filter(
-    (l) => l in LUMA_LOCATION_FEEDS
-  );
-  const interests = (input.interests || []).filter((i) => i in LUMA_TOPIC_FEEDS);
-
-  const locList =
-    locations.length > 0 ? locations : Object.keys(LUMA_LOCATION_FEEDS);
-  const topicList =
-    interests.length > 0 ? interests : Object.keys(LUMA_TOPIC_FEEDS);
-
-  const byId = new Map<
-    string,
-    DiscoverEvent & { _score: number; _fromTopic: Set<string> }
-  >();
-  const topicOrigin = new Set<string>();
-  const attempts: DiscoverFeedAttempt[] = [];
-
-  const placeJobs = locList.map(async (loc) => {
-    const feed = LUMA_LOCATION_FEEDS[loc];
-    const { entries, attempt } = await fetchDiscoverEntries({
-      label: `location:${loc}`,
-      placeApiId: feed.placeApiId,
-      limit: perFeed,
-    });
-    return { loc, entries, attempt };
-  });
-
-  const topicJobs = topicList.map(async (topic) => {
-    const feed = LUMA_TOPIC_FEEDS[topic];
-    const { entries, attempt } = await fetchDiscoverEntries({
-      label: `topic:${topic}`,
-      categoryApiId: feed.categoryApiId,
-      limit: perFeed,
-    });
-    return { topic, entries, attempt };
-  });
-
-  const [placeResults, topicResults] = await Promise.all([
-    Promise.all(placeJobs),
-    Promise.all(topicJobs),
-  ]);
-
-  for (const { loc, entries, attempt } of placeResults) {
-    attempts.push(attempt);
-    for (const entry of entries) {
-      const event = entryToDiscoverEvent(entry);
-      if (!event) continue;
-      const existing = byId.get(event.id);
-      if (existing) {
-        existing.matchedLocations = Array.from(
-          new Set([...(existing.matchedLocations || []), loc])
-        );
-        existing._score += 3;
-      } else {
-        byId.set(event.id, {
-          ...event,
-          matchedLocations: [loc],
-          matchedTopics: [],
-          _score: 3,
-          _fromTopic: new Set(),
-        });
-      }
-    }
-  }
-
-  for (const { topic, entries, attempt } of topicResults) {
-    attempts.push(attempt);
-    for (const entry of entries) {
-      const event = entryToDiscoverEvent(entry);
-      if (!event) continue;
-      topicOrigin.add(`${event.id}::${topic}`);
-      const existing = byId.get(event.id);
-      if (existing) {
-        existing.matchedTopics = Array.from(
-          new Set([...(existing.matchedTopics || []), topic])
-        );
-        existing._fromTopic.add(topic);
-        existing._score += 2;
-      } else {
-        byId.set(event.id, {
-          ...event,
-          matchedLocations: matchesLocation(event, locList),
-          matchedTopics: [topic],
-          _score: 2,
-          _fromTopic: new Set([topic]),
-        });
-      }
-    }
-  }
-
-  const failedAttempts = attempts.filter((a) => !a.ok);
-  const anyOk = attempts.some((a) => a.ok);
-
-  if (!anyOk) {
-    const cmds = failedAttempts.map((a) => a.command).join("\n");
-    return {
-      events: [],
-      attempts,
-      ok: false,
-      error: `Failed to fetch Luma events. Commands used:\n${cmds}`,
-    };
-  }
-
-  const now = Date.now();
-  const scored = Array.from(byId.values()).map((event) => {
-    const locs = matchesLocation(event, locList);
-    const topics = matchesTopic(event, topicList, topicOrigin);
-    let score = event._score;
-    if (locs.length) score += 2;
-    if (topics.length) score += 2;
-    if (locs.length && topics.length) score += 8;
-
-    const startMs = event.startAt ? Date.parse(event.startAt) : NaN;
-    const upcoming = !Number.isNaN(startMs) && startMs >= now - 60 * 60 * 1000;
-    if (upcoming) score += 1;
-    else score -= 5;
-
-    return {
-      ...event,
-      matchedLocations: locs.length ? locs : event.matchedLocations,
-      matchedTopics: topics.length ? topics : event.matchedTopics,
-      _score: score,
-      _startMs: Number.isNaN(startMs) ? Number.POSITIVE_INFINITY : startMs,
-    };
-  });
-
-  let pool = scored;
-  if (mode === "match") {
-    const both = scored.filter(
-      (e) =>
-        (e.matchedLocations?.length || 0) > 0 &&
-        (e.matchedTopics?.length || 0) > 0
-    );
-    pool = both.length >= Math.min(3, limit) ? both : scored;
-    pool.sort((a, b) => {
-      if (b._score !== a._score) return b._score - a._score;
-      return a._startMs - b._startMs;
-    });
-  } else {
-    // all real upcoming from category/location feeds
-    pool = scored.filter((e) => e._startMs >= now - 60 * 60 * 1000);
-    pool.sort((a, b) => a._startMs - b._startMs);
-  }
-
-  const picked: DiscoverEvent[] = pool.slice(0, limit).map((event) => ({
-    id: event.id,
-    title: event.title,
-    startAt: event.startAt,
-    location: event.location,
-    coverUrl: event.coverUrl,
-    url: event.url,
-    guestCount: event.guestCount,
-    matchedLocations: event.matchedLocations,
-    matchedTopics: event.matchedTopics,
-  }));
-
-  if (picked.length > 0) {
-    return {
-      events: picked,
-      attempts,
-      ok: true,
-      error:
-        failedAttempts.length > 0
-          ? `Some feeds failed:\n${failedAttempts
-              .map((a) => `${a.label}: ${a.error}\n${a.command}`)
-              .join("\n\n")}`
-          : undefined,
-    };
-  }
-
-  // Strict / refresh: never inject demo events
-  if (mode === "all") {
-    const cmds = attempts.map((a) => a.command).join("\n");
-    return {
-      events: [],
-      attempts,
-      ok: false,
-      error: `No real Luma events returned for your categories. Commands used:\n${cmds}`,
-    };
-  }
-
-  // Soft mode: curated demos so first paint isn't empty
+}): Promise<DiscoverResult & { added?: number; skipped?: number }> {
+  const { discoverEventsFromWebsite } = await import("@/lib/luma-page-scrape");
+  const result = await discoverEventsFromWebsite(input);
   return {
-    events: FALLBACK_EVENTS.slice(0, limit).map((e) => ({
-      ...e,
-      url: `https://luma.com/${e.id}`,
+    events: result.events,
+    attempts: result.attempts.map((a) => ({
+      label: a.label,
+      url: a.url,
+      command: a.command,
+      ok: a.ok,
+      status: a.status,
+      count: a.count,
+      error: a.error,
     })),
-    attempts,
-    ok: true,
-    error:
-      failedAttempts.length > 0
-        ? `Live feeds failed; showing demos. Commands used:\n${failedAttempts
-            .map((a) => a.command)
-            .join("\n")}`
-        : undefined,
+    ok: result.ok,
+    error: result.error,
+    added: result.added,
+    skipped: result.skipped,
   };
 }
 

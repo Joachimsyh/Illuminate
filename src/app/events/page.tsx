@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { findUserById } from "@/lib/repos";
 import { discoverEventsForProfile } from "@/lib/luma-scraper";
 import { EventsClient } from "./events-client";
 
@@ -14,9 +14,7 @@ export default async function EventsPage() {
   const session = await getSession();
   if (!session?.user?.id) redirect("/login");
 
-  const user = await prisma.user.findUnique({
-    where: { id: session.user.id },
-  });
+  const user = await findUserById(session.user.id);
   if (!user) redirect("/login");
 
   const locations = splitPipe(user.location);

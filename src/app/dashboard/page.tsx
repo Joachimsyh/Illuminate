@@ -1,32 +1,17 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { findUserById, listApplications } from "@/lib/repos";
 import { DashboardClient } from "./dashboard-client";
 
 export default async function DashboardPage() {
   const session = await getSession();
   if (!session?.user?.id) redirect("/login");
 
-  const [applications, user] = await Promise.all([
-    prisma.application.findMany({
-      where: { userId: session.user.id },
-      orderBy: { appliedAt: "desc" },
-      take: 20,
-    }),
-    prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: {
-        agentEnabled: true,
-        agentKeywords: true,
-        headline: true,
-        company: true,
-        bio: true,
-        location: true,
-        skills: true,
-        onboardingCompleted: true,
-      },
-    }),
+  const [allApplications, user] = await Promise.all([
+    listApplications(session.user.id),
+    findUserById(session.user.id),
   ]);
+  const applications = allApplications.slice(0, 20);
 
   if (!user?.onboardingCompleted) redirect("/onboarding");
 
