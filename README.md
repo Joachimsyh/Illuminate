@@ -192,3 +192,27 @@ Works for the web app with a hosted Postgres (`DATABASE_URL`). Set env vars in t
 3. Events → **Monad Blitz Hackathon**
 4. **Apply Automatically**
 5. Toggle **Agent mode** → **Run agent now**
+
+## LinkedIn Scraper (Bright Data)
+
+A small helper script for scraping LinkedIn profiles using Bright Data lives at `scripts/linkedin_scrape.sh` on the `scraper` branch. It wraps a Bright Data Datasets API call and prints the JSON response to stdout.
+
+Usage:
+
+```bash
+# set your Bright Data API key in the environment
+export BRIGHTDATA_API_KEY="your_api_key"
+
+# Provide a JSON file shaped like:
+# {"input":[{"url":"https://www.linkedin.com/in/username/"}], "limit_per_input":10}
+./scripts/linkedin_scrape.sh urls.json
+
+# Or pass comma-separated LinkedIn profile URLs directly:
+./scripts/linkedin_scrape.sh "https://www.linkedin.com/in/elad-moshe-05a90413/,https://www.linkedin.com/in/jonathan-myrvik-3baa01109"
+```
+
+Notes:
+- Keep your Bright Data API key secret; never commit it to source control.
+- The script posts to Bright Data dataset id `gd_l1viktl72bvl7bjuj0` and sets `limit_per_input` to `10` by default.
+- The command prints results to stdout; redirect to a file to save, e.g. `./scripts/linkedin_scrape.sh urls.json > output.json`.
+
