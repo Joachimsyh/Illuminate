@@ -16,7 +16,12 @@ export function Nav() {
   const pathname = usePathname();
   const { data: session } = useSession();
 
-  if (pathname === "/login" || pathname === "/" || pathname === "/onboarding")
+  if (
+    pathname === "/login" ||
+    pathname === "/signup" ||
+    pathname === "/" ||
+    pathname === "/onboarding"
+  )
     return null;
 
   return (
@@ -65,20 +70,32 @@ export function Nav() {
         <div className="flex items-center gap-3">
           {session?.user && (
             <>
-              <div className="hidden text-right sm:block">
-                <p className="text-sm text-mist-100">{session.user.name}</p>
-                <p className="text-xs text-mist-400">
-                  {session.user.headline || "Builder"}
-                </p>
-              </div>
-              {session.user.image && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={session.user.image}
-                  alt=""
-                  className="h-9 w-9 rounded-full ring-2 ring-lumen-400/30"
-                />
-              )}
+              <Link
+                href="/profile"
+                className="group flex items-center gap-3 rounded-full py-1 pl-1 pr-2 transition hover:bg-white/5"
+                title="Open profile"
+              >
+                <div className="hidden text-right sm:block">
+                  <p className="text-sm text-mist-100 group-hover:text-lumen-200">
+                    {session.user.name}
+                  </p>
+                  <p className="text-xs text-mist-400">
+                    {session.user.headline || "Edit profile"}
+                  </p>
+                </div>
+                {session.user.image ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={session.user.image}
+                    alt=""
+                    className="h-9 w-9 rounded-full ring-2 ring-lumen-400/30 transition group-hover:ring-lumen-300/60"
+                  />
+                ) : (
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-lumen-400/20 text-sm font-semibold text-lumen-200 ring-2 ring-lumen-400/30">
+                    {(session.user.name || "?").slice(0, 1).toUpperCase()}
+                  </div>
+                )}
+              </Link>
               <button
                 onClick={() => signOut({ callbackUrl: "/login" })}
                 className="rounded-lg px-2.5 py-1.5 text-xs text-mist-400 transition hover:bg-white/5 hover:text-mist-100"

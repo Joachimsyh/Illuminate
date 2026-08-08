@@ -149,8 +149,40 @@ Single page, four steps, progress indicator.
 - Warning copy: *"This link lets us read your Luma calendar. Keep it private — you can reset it in Luma at any time."*
 
 **Step 4 — Build profile (Agent 1 input).**
-- Multi-select chips: skills, tech stack, interests, seniority, event types they want
-- Textarea or file upload: CV / LinkedIn profile text (**required** — this is where profile data actually comes from)
+
+During registration / profile setup, the user **must** select:
+
+1. **Location(s)** for events they want — available options only:
+   - London
+   - Amsterdam
+   - Barcelona
+   - Berlin
+   - Copenhagen
+2. **Interest(s)** for events — available options only:
+   - Tech
+   - AI
+   - Crypto
+   - Food & Drinks
+   - Arts & Culture
+3. **Skill(s)** — examples (extendable list):
+   - Software developer
+   - AI analyst
+   - Agentic software
+   - Full-stack engineer
+   - Product designer
+   - Data scientist
+   - Growth / marketing
+   - Founder
+   - Community builder
+   - Researcher
+
+**UI for these three categories:**
+- Each category is shown on its own **floating page** (one panel at a time; advance with Continue).
+- Options are **rounded buttons** (pill / rounded-full style). Selected state is visually distinct.
+- Multi-select allowed within each category (at least one required per category).
+
+Also collect:
+- Textarea **or file upload**: CV / LinkedIn profile text (**optional**). Accept PDF, DOCX, DOC, ODT, TXT, MD, RTF, HTML, and other text-based files; extract text server-side into `raw_source`. When provided, Agent 1 enriches the profile; location/interest/skill chips alone are enough to finish onboarding.
 - Textarea: **paste 3–5 of your recent LinkedIn posts** (used as voice reference by Agent 3). Explain plainly why: *"So generated drafts sound like you, not like an AI."*
 
 ---
@@ -269,7 +301,7 @@ These are requirements, not suggestions.
 ## 11. Open decisions
 
 - **[DECIDE]** Calendar target (§2) — recommend own-DB + outbound ICS feed
-- **[DECIDE]** Event discovery source: Luma discover page, curated calendar ICS feeds, or user-submitted URLs? Recommendation: **start with user-submitted event URLs**, add curated public calendar ICS feeds next. Both avoid scraping.
+- Event discovery: scrape Luma public city + topic feeds for the user's selected locations/interests (`luma.com/london`, `…/ai`, etc.) and show the closest 10 matching upcoming events. No search bar on `/events`.
 - **[DECIDE]** Hosting region — UK/EU preferred given GDPR posture
 - Deferred: `w_member_social` auto-publishing, once the manual loop is proven
 

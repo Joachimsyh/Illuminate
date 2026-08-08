@@ -6,8 +6,10 @@ services:
       POSTGRES_USER: luma
       POSTGRES_PASSWORD: luma
       POSTGRES_DB: luma_autoapply
+      # Local hackathon: allow host → published-port connections (Docker Desktop SCRAM quirks)
+      POSTGRES_HOST_AUTH_METHOD: trust
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:

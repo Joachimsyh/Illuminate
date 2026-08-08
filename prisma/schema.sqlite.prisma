@@ -1,9 +1,3 @@
-// Optional local-only schema if you prefer SQLite without Docker Postgres.
-// Usage:
-//   copy prisma\schema.sqlite.prisma prisma\schema.prisma
-//   set DATABASE_URL=file:./dev.db
-//   npx prisma db push
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -14,27 +8,73 @@ datasource db {
 }
 
 model User {
-  id            String    @id @default(cuid())
-  name          String?
-  email         String?   @unique
-  emailVerified DateTime?
-  image         String?
-  linkedinId    String?   @unique
-  headline      String?
-  company       String?
-  location      String?
+  id                  String    @id @default(cuid())
+  name                String?
+  email               String?   @unique
+  emailVerified       DateTime?
+  image               String?
+  passwordHash        String?
+  linkedinId          String?   @unique
+  /// Name used on Luma guest lists
+  registrationName    String?
+  /// Email used for Luma registrations
+  registrationEmail   String?
+  headline            String?
+  company             String?
+  location            String?
   bio                 String?
   skills              String    @default("")
+  techStack           String    @default("")
+  interests           String    @default("")
+  seniority           String?
+  eventTypes          String    @default("")
+  /// Pasted CV / LinkedIn profile text (Agent 1 input)
+  rawSource           String    @default("")
+  /// JSON array of pasted LinkedIn posts (voice reference)
+  writingSamples      String    @default("[]")
   onboardingCompleted Boolean   @default(false)
+  onboardingStep      Int       @default(1)
   agentEnabled        Boolean   @default(false)
   agentKeywords       String    @default("ai,hackathon,startup,web3")
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
-  accounts     Account[]
-  sessions     Session[]
-  applications Application[]
-  oauthTokens  OAuthToken?
+  accounts       Account[]
+  sessions       Session[]
+  loginSessions  LoginSession[]
+  applications   Application[]
+  oauthTokens    OAuthToken?
+  lumaConnection LumaConnection?
+}
+
+model LumaConnection {
+  id              String    @id @default(cuid())
+  userId          String    @unique
+  /// AES-encrypted ICS URL (credential)
+  icsUrlEncrypted String
+  icsUrlLastOkAt  DateTime?
+  status          String    @default("active")
+  previewJson     String    @default("[]")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model LoginSession {
+  id        String   @id @default(cuid())
+  userId    String
+  provider  String
+  userAgent String?
+  ip        String?
+  createdAt DateTime @default(now())
+  expiresAt DateTime?
+  revokedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([createdAt])
 }
 
 model Account {

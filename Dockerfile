@@ -14,6 +14,8 @@ ARG SSL_NO_VERIFY=0
 RUN if [ "$SSL_NO_VERIFY" = "1" ]; then npm config set strict-ssl false; fi
 COPY package.json package-lock.json ./
 COPY prisma ./prisma
+# Docker/production uses Postgres schema
+RUN cp prisma/schema.postgres.prisma prisma/schema.prisma
 RUN if [ "$SSL_NO_VERIFY" = "1" ]; then export NODE_TLS_REJECT_UNAUTHORIZED=0; fi; \
     npm ci || npm install
 
@@ -23,6 +25,7 @@ ARG SSL_NO_VERIFY=0
 RUN if [ "$SSL_NO_VERIFY" = "1" ]; then npm config set strict-ssl false; fi
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+RUN cp prisma/schema.postgres.prisma prisma/schema.prisma
 ENV NODE_ENV=production
 ARG DATABASE_URL="postgresql://luma:luma@db:5432/luma_autoapply?schema=public"
 ENV DATABASE_URL=$DATABASE_URL
@@ -43,6 +46,7 @@ RUN groupadd --system --gid 1001 nodejs \
 
 COPY package.json package-lock.json ./
 COPY prisma ./prisma
+RUN cp prisma/schema.postgres.prisma prisma/schema.prisma
 COPY scripts ./scripts
 COPY src ./src
 COPY tsconfig.json ./

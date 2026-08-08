@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { discoverEvents } from "@/lib/luma-scraper";
+import { discoverEventsForProfile } from "@/lib/luma-scraper";
 import { autoApply } from "@/lib/auto-apply";
 
 export type AgentRunResult = {
@@ -20,23 +20,21 @@ export async function runAgentCycle(): Promise<AgentRunResult> {
     where: { agentEnabled: true },
   });
 
-  const events = await discoverEvents();
   const details: AgentRunResult["details"] = [];
   let applicationsAttempted = 0;
   let successes = 0;
   let failures = 0;
 
   for (const user of users) {
-    const keywords = (user.agentKeywords || "")
-      .split(",")
-      .map((k) => k.trim().toLowerCase())
-      .filter(Boolean);
-
-    const matches = events.filter((event) => {
-      if (keywords.length === 0) return true;
-      const hay = `${event.title} ${event.location || ""}`.toLowerCase();
-      return keywords.some((k) => hay.includes(k));
-    });
+    const locations = (user.location || "").split("|").filter(Boolean);
+    const interests = (user.interests || "").split("|").filter(Boolean);
+    const matches = (
+      await discoverEventsForProfile({
+        locations,
+        interests,
+        limit: 10,
+      })
+    ).events;
 
     for (const event of matches.slice(0, 3)) {
       applicationsAttempted += 1;

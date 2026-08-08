@@ -5,20 +5,48 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import type { Adapter } from "next-auth/adapters";
 import { prisma } from "@/lib/prisma";
+import { verifyPassword } from "@/lib/password";
 
 const hasLinkedIn =
   Boolean(process.env.LINKEDIN_CLIENT_ID) &&
   Boolean(process.env.LINKEDIN_CLIENT_SECRET);
 
-const demoMode = process.env.DEMO_MODE === "true" || !hasLinkedIn;
+async function recordLoginSession(
+  userId: string,
+  provider: string,
+  meta?: { userAgent?: string | null; ip?: string | null }
+) {
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+  await prisma.loginSession.create({
+    data: {
+      userId,
+      provider,
+      userAgent: meta?.userAgent?.slice(0, 500) || null,
+      ip: meta?.ip?.slice(0, 100) || null,
+      expiresAt,
+    },
+  });
+
+  // Also keep NextAuth Session row for adapter-backed session history
+  await prisma.session.create({
+    data: {
+      sessionToken: `sess_${userId}_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+      userId,
+      expires: expiresAt,
+    },
+  });
+}
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma) as Adapter,
   session: {
     strategy: "jwt",
+    maxAge: 30 * 24 * 60 * 60,
   },
   pages: {
     signIn: "/login",
+    error: "/login",
   },
   providers: [
     ...(hasLinkedIn
@@ -45,62 +73,43 @@ export const authOptions: NextAuthOptions = {
           }),
         ]
       : []),
-    ...(demoMode
-      ? [
-          CredentialsProvider({
-            id: "demo",
-            name: "Demo Login",
-            credentials: {
-              name: { label: "Name", type: "text" },
-              email: { label: "Email", type: "email" },
-            },
-            async authorize(credentials) {
-              const name = credentials?.name?.trim() || "Demo Builder";
-              const email =
-                credentials?.email?.trim() || "demo@illuminate.dev";
+    CredentialsProvider({
+      id: "credentials",
+      name: "Email",
+      credentials: {
+        email: { label: "Email", type: "email" },
+        password: { label: "Password", type: "password" },
+      },
+      async authorize(credentials) {
+        const email = credentials?.email?.trim().toLowerCase();
+        const password = credentials?.password || "";
+        if (!email || !password) return null;
 
-              const user = await prisma.user.upsert({
-                where: { email },
-                update: { name },
-                create: {
-                  email,
-                  name,
-                  headline: "Full-stack engineer · Hackathon builder",
-                  company: "Illuminate",
-                  location: "Remote",
-                  bio: "Building with Illuminate — auto-apply to Luma events.",
-                  linkedinId: `demo-${email}`,
-                  image: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(email)}`,
-                  onboardingCompleted: false,
-                  skills: "",
-                },
-              });
+        const user = await prisma.user.findUnique({ where: { email } });
+        if (!user?.passwordHash) return null;
 
-              await prisma.oAuthToken.upsert({
-                where: { userId: user.id },
-                update: {
-                  accessToken: `demo-token-${user.id}`,
-                  provider: "demo",
-                },
-                create: {
-                  userId: user.id,
-                  accessToken: `demo-token-${user.id}`,
-                  provider: "demo",
-                },
-              });
+        const valid = await verifyPassword(password, user.passwordHash);
+        if (!valid) return null;
 
-              return {
-                id: user.id,
-                name: user.name,
-                email: user.email,
-                image: user.image,
-              };
-            },
-          }),
-        ]
-      : []),
+        return {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          image: user.image,
+        };
+      },
+    }),
   ],
   callbacks: {
+    async signIn({ user, account }) {
+      if (!user.id) return true;
+      try {
+        await recordLoginSession(user.id, account?.provider || "credentials");
+      } catch (err) {
+        console.error("[auth] failed to store login session", err);
+      }
+      return true;
+    },
     async jwt({ token, user, account, trigger }) {
       if (user) {
         token.userId = user.id;
@@ -136,12 +145,16 @@ export const authOptions: NextAuthOptions = {
         }
       }
 
-      if (token.userId && (user || account || trigger === "update")) {
+      if (token.userId) {
         const dbUser = await prisma.user.findUnique({
           where: { id: token.userId as string },
           select: { onboardingCompleted: true },
         });
         token.onboardingCompleted = dbUser?.onboardingCompleted ?? false;
+
+        if (trigger === "update" && dbUser) {
+          token.onboardingCompleted = dbUser.onboardingCompleted;
+        }
       }
 
       return token;
@@ -180,13 +193,20 @@ export const authOptions: NextAuthOptions = {
       return session;
     },
     async redirect({ url, baseUrl }) {
-      if (url.startsWith("/")) return `${baseUrl}${url}`;
+      // After auth, prefer dashboard; onboarding gate handles first-time users
+      if (url.startsWith("/")) {
+        if (url === "/login" || url.startsWith("/login?")) {
+          return `${baseUrl}/dashboard`;
+        }
+        return `${baseUrl}${url}`;
+      }
       try {
-        if (new URL(url).origin === baseUrl) return url;
+        const parsed = new URL(url);
+        if (parsed.origin === baseUrl) return url;
       } catch {
         /* ignore */
       }
-      return `${baseUrl}/onboarding`;
+      return `${baseUrl}/dashboard`;
     },
   },
   secret: process.env.NEXTAUTH_SECRET,
@@ -194,10 +214,6 @@ export const authOptions: NextAuthOptions = {
 
 export function getSession() {
   return getServerSession(authOptions);
-}
-
-export function isDemoMode() {
-  return demoMode;
 }
 
 export function isLinkedInEnabled() {

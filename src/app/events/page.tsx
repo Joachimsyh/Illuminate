@@ -1,15 +1,40 @@
+import { redirect } from "next/navigation";
+import { getSession } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { discoverEventsForProfile } from "@/lib/luma-scraper";
 import { EventsClient } from "./events-client";
-import { discoverEvents } from "@/lib/luma-scraper";
 
 export const dynamic = "force-dynamic";
 
-export default async function EventsPage({
-  searchParams,
-}: {
-  searchParams: { q?: string };
-}) {
-  const q = searchParams.q || "";
-  const events = await discoverEvents(q || undefined);
+function splitPipe(value: string | null | undefined): string[] {
+  return value ? value.split("|").filter(Boolean) : [];
+}
 
-  return <EventsClient initialEvents={events} initialQuery={q} />;
+export default async function EventsPage() {
+  const session = await getSession();
+  if (!session?.user?.id) redirect("/login");
+
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+  });
+  if (!user) redirect("/login");
+
+  const locations = splitPipe(user.location);
+  const interests = splitPipe(user.interests);
+
+  const result = await discoverEventsForProfile({
+    locations,
+    interests,
+    limit: 10,
+    mode: "match",
+  });
+
+  return (
+    <EventsClient
+      initialEvents={result.events}
+      locations={locations}
+      interests={interests}
+      initialError={result.ok ? result.error : result.error}
+    />
+  );
 }

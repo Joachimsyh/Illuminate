@@ -174,6 +174,9 @@ export async function autoApply(input: ApplyInput): Promise<ApplyResult> {
     };
   }
 
+  const applyName = user.registrationName || user.name;
+  const applyEmail = user.registrationEmail || user.email;
+
   const existing = await prisma.application.findUnique({
     where: {
       userId_eventId: { userId: input.userId, eventId: input.eventId },
@@ -201,11 +204,11 @@ export async function autoApply(input: ApplyInput): Promise<ApplyResult> {
   const answers = buildAnswers(
     event.formFields,
     {
-      name: user.name,
-      email: user.email,
+      name: applyName,
+      email: applyEmail,
       company: user.company,
       headline: user.headline,
-      bio: user.bio,
+      bio: user.bio || user.rawSource?.slice(0, 500) || null,
       linkedinId: user.linkedinId,
     },
     input.answers || {}

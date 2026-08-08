@@ -1,9 +1,10 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -15,9 +16,7 @@ model User {
   image               String?
   passwordHash        String?
   linkedinId          String?   @unique
-  /// Name used on Luma guest lists
   registrationName    String?
-  /// Email used for Luma registrations
   registrationEmail   String?
   headline            String?
   company             String?
@@ -28,9 +27,7 @@ model User {
   interests           String    @default("")
   seniority           String?
   eventTypes          String    @default("")
-  /// Pasted CV / LinkedIn profile text (Agent 1 input)
   rawSource           String    @default("")
-  /// JSON array of pasted LinkedIn posts (voice reference)
   writingSamples      String    @default("[]")
   onboardingCompleted Boolean   @default(false)
   onboardingStep      Int       @default(1)
@@ -50,7 +47,6 @@ model User {
 model LumaConnection {
   id              String    @id @default(cuid())
   userId          String    @unique
-  /// AES-encrypted ICS URL (credential)
   icsUrlEncrypted String
   icsUrlLastOkAt  DateTime?
   status          String    @default("active")
