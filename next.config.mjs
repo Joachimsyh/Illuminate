@@ -1,3 +1,11 @@
+// Apply before NextAuth/openid-client HTTPS calls (LinkedIn OIDC).
+if (
+  process.env.SSL_NO_VERIFY === "1" &&
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED !== "0"
+) {
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+}
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",

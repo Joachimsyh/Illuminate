@@ -1,6 +1,6 @@
-import type { NextAuthOptions } from "next-auth";
+import type { NextAuthOptions, Profile } from "next-auth";
 import { getServerSession } from "next-auth";
-import LinkedInProvider from "next-auth/providers/linkedin";
+import type { OAuthConfig } from "next-auth/providers/oauth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { PostgresAdapter } from "@/lib/auth-adapter";
 import { verifyPassword } from "@/lib/password";
@@ -12,10 +12,65 @@ import {
   updateUser,
   upsertOAuthToken,
 } from "@/lib/repos";
+import { saveLinkedInOidcSnapshot } from "@/lib/profile-knowledge";
 
 const hasLinkedIn =
   Boolean(process.env.LINKEDIN_CLIENT_ID) &&
   Boolean(process.env.LINKEDIN_CLIENT_SECRET);
+
+// Node on this machine often fails leaf cert verification; LinkedIn OIDC needs HTTPS.
+if (
+  (process.env.SSL_NO_VERIFY === "1" ||
+    process.env.NODE_ENV !== "production") &&
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED !== "0"
+) {
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+}
+
+type LinkedInOidcProfile = Profile & {
+  sub: string;
+  name?: string;
+  email?: string;
+  picture?: string;
+};
+
+/**
+ * Custom LinkedIn OIDC provider.
+ * next-auth v4's built-in LinkedIn provider still merges legacy /v2/me
+ * userinfo settings; new LinkedIn apps only support OpenID Connect.
+ */
+function LinkedInOidcProvider(): OAuthConfig<LinkedInOidcProfile> {
+  return {
+    id: "linkedin",
+    name: "LinkedIn",
+    type: "oauth",
+    clientId: process.env.LINKEDIN_CLIENT_ID!,
+    clientSecret: process.env.LINKEDIN_CLIENT_SECRET!,
+    issuer: "https://www.linkedin.com/oauth",
+    wellKnown:
+      "https://www.linkedin.com/oauth/.well-known/openid-configuration",
+    authorization: {
+      params: { scope: "openid profile email" },
+    },
+    idToken: true,
+    checks: ["state"],
+    client: {
+      token_endpoint_auth_method: "client_secret_post",
+    },
+    httpOptions: { timeout: 20000 },
+    // Link LinkedIn to an existing email/password account with the same email.
+    allowDangerousEmailAccountLinking: true,
+    profile(profile) {
+      return {
+        id: profile.sub,
+        name: profile.name ?? null,
+        email: profile.email ?? null,
+        image: profile.picture ?? null,
+        linkedinId: profile.sub,
+      };
+    },
+  };
+}
 
 async function recordLoginSession(
   userId: string,
@@ -49,31 +104,9 @@ export const authOptions: NextAuthOptions = {
     signIn: "/login",
     error: "/login",
   },
+  debug: process.env.NODE_ENV === "development",
   providers: [
-    ...(hasLinkedIn
-      ? [
-          LinkedInProvider({
-            clientId: process.env.LINKEDIN_CLIENT_ID!,
-            clientSecret: process.env.LINKEDIN_CLIENT_SECRET!,
-            authorization: {
-              params: {
-                scope: "openid profile email",
-              },
-            },
-            issuer: "https://www.linkedin.com/oauth",
-            jwks_endpoint: "https://www.linkedin.com/oauth/openid/jwks",
-            async profile(profile) {
-              return {
-                id: profile.sub,
-                name: profile.name,
-                email: profile.email,
-                image: profile.picture,
-                linkedinId: profile.sub,
-              };
-            },
-          }),
-        ]
-      : []),
+    ...(hasLinkedIn ? [LinkedInOidcProvider()] : []),
     CredentialsProvider({
       id: "credentials",
       name: "Email",
@@ -103,34 +136,77 @@ export const authOptions: NextAuthOptions = {
   ],
   callbacks: {
     async signIn({ user, account }) {
-      if (!user.id) return true;
-      try {
-        await recordLoginSession(user.id, account?.provider || "credentials");
-      } catch (err) {
-        console.error("[auth] failed to store login session", err);
+      // Only record after we have a real DB user id (credentials).
+      // LinkedIn OAuth profiles use LinkedIn `sub` here — before the adapter
+      // creates/links the user — so recording is deferred to the jwt callback.
+      if (account?.provider === "credentials" && user.id) {
+        try {
+          await recordLoginSession(user.id, "credentials");
+        } catch (err) {
+          console.error("[auth] failed to store login session", err);
+        }
       }
       return true;
     },
     async jwt({ token, user, account, trigger }) {
       if (user) {
-        token.userId = user.id;
+        // Adapter returns DB ids; OAuth profile may briefly expose LinkedIn `sub`.
+        let userId = user.id;
+        if (userId) {
+          const existing = await findUserById(userId);
+          if (!existing && user.email) {
+            const byEmail = await findUserByEmail(
+              user.email.trim().toLowerCase()
+            );
+            if (byEmail) userId = byEmail.id;
+          }
+        }
+        token.userId = userId;
       }
 
       if (account?.access_token && token.userId) {
-        await upsertOAuthToken({
-          userId: token.userId as string,
-          accessToken: account.access_token,
-          refreshToken: account.refresh_token ?? null,
-          expiresAt: account.expires_at
-            ? new Date(account.expires_at * 1000)
-            : null,
-          provider: account.provider,
-        });
-
-        if (account.provider === "linkedin" && account.providerAccountId) {
-          await updateUser(token.userId as string, {
-            linkedinId: account.providerAccountId,
+        try {
+          await upsertOAuthToken({
+            userId: token.userId as string,
+            accessToken: account.access_token,
+            refreshToken: account.refresh_token ?? null,
+            expiresAt: account.expires_at
+              ? new Date(account.expires_at * 1000)
+              : null,
+            provider: account.provider,
           });
+
+          if (account.provider === "linkedin" && account.providerAccountId) {
+            const dbUser = await findUserById(token.userId as string);
+            await updateUser(token.userId as string, {
+              linkedinId: account.providerAccountId,
+              // Prefill Luma registration identity from LinkedIn OIDC
+              registrationName:
+                dbUser?.registrationName || user?.name || dbUser?.name || null,
+              registrationEmail:
+                dbUser?.registrationEmail ||
+                user?.email ||
+                dbUser?.email ||
+                null,
+              name: dbUser?.name || user?.name || null,
+              email: dbUser?.email || user?.email || null,
+              image: dbUser?.image || user?.image || null,
+            });
+            await saveLinkedInOidcSnapshot(token.userId as string, {
+              sub: account.providerAccountId,
+              name: user?.name || dbUser?.name || null,
+              email: user?.email || dbUser?.email || null,
+              picture: user?.image || dbUser?.image || null,
+            });
+            try {
+              await recordLoginSession(token.userId as string, "linkedin");
+            } catch (err) {
+              console.error("[auth] failed to store linkedin login session", err);
+            }
+          }
+        } catch (err) {
+          // Never fail the whole sign-in because of profile/token side effects.
+          console.error("[auth] linkedin post-login enrichment failed", err);
         }
       }
 

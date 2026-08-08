@@ -106,3 +106,17 @@ export const FLOATING_CATEGORIES: {
     options: PROFILE_SKILLS,
   },
 ];
+
+/** Life / employment status shown on the Knowledge tab. */
+export const LIFE_STATUS_OPTIONS = [
+  "Student",
+  "Employed",
+  "Self-employed",
+  "Freelancer",
+  "Founder",
+  "Intern",
+  "Between roles",
+  "Other",
+] as const;
+
+export type LifeStatus = (typeof LIFE_STATUS_OPTIONS)[number];

@@ -2,11 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSession } from "@/lib/auth";
 import { findLumaConnection, findUserById, updateUser } from "@/lib/repos";
-import { skillsToKeywords } from "@/lib/skills";
-import {
-  mergeAgent1WithSelections,
-  runAgent1Profile,
-} from "@/lib/agent1-profile";
+import { syncUserProfileKnowledge } from "@/lib/profile-knowledge";
 import {
   EVENT_INTERESTS,
   EVENT_LOCATIONS,
@@ -145,55 +141,25 @@ export async function POST(request: Request) {
     .slice(0, MAX_WRITING_SAMPLES);
 
   const rawSource = (data.rawSource || "").trim();
-  const agentInput = {
+
+  const userRow = await findUserById(session.user.id);
+  if (!userRow) {
+    return NextResponse.json({ error: "User not found" }, { status: 404 });
+  }
+
+  // Persist to user_profiles + knowledge graph; skip Agent 1 when unchanged
+  const sync = await syncUserProfileKnowledge({
+    userId: session.user.id,
+    name: userRow.name,
+    company: userRow.company,
     locations,
     interests,
     skills,
     rawSource,
-  };
-
-  // Agent 1: NVIDIA GLM primary, OpenRouter fallback. On total failure, keep chips.
-  let merged = {
-    skills,
-    techStack: [] as string[],
-    interests,
-    seniority: null as string | null,
-    eventTypes: [] as string[],
-    headline: null as string | null,
-    bio: null as string | null,
-    keywords: skillsToKeywords([...skills, ...interests, ...locations])
-      .split(",")
-      .map((k) => k.trim())
-      .filter(Boolean),
-  };
-  let llmProvider: "nvidia" | "openrouter" | "none" = "none";
-
-  // Only call the LLM when there's CV/profile text; chips alone are enough to finish.
-  if (rawSource.length >= 40) {
-    try {
-      const { profile, provider } = await runAgent1Profile(agentInput);
-      merged = mergeAgent1WithSelections(profile, agentInput);
-      llmProvider = provider;
-    } catch (err) {
-      console.warn(
-        "[onboarding] Agent 1 failed, saving selections only:",
-        err instanceof Error ? err.message : err
-      );
-    }
-  }
+    writingSamples: samples,
+  });
 
   const user = await updateUser(session.user.id, {
-    location: locations.join("|"),
-    skills: merged.skills.join("|"),
-    interests: merged.interests.join("|"),
-    techStack: merged.techStack.join("|"),
-    seniority: merged.seniority,
-    eventTypes: merged.eventTypes.join("|"),
-    headline: merged.headline,
-    bio: merged.bio,
-    rawSource,
-    writingSamples: JSON.stringify(samples),
-    agentKeywords: merged.keywords.join(","),
     onboardingStep: 4,
     onboardingCompleted: true,
   });
@@ -202,6 +168,8 @@ export async function POST(request: Request) {
     ok: true,
     onboardingCompleted: user.onboardingCompleted,
     onboardingStep: user.onboardingStep,
-    agent1Provider: llmProvider,
+    agent1Provider: sync.provider,
+    profileCached: sync.reused,
+    newPosts: sync.newPosts,
   });
 }

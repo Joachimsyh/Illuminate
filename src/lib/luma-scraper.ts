@@ -6,6 +6,8 @@ export type FormField = {
   name: string;
   label: string;
   type: string;
+  /** Luma question_type when known (github, long-text, agree-check, …) */
+  questionType?: string;
   required: boolean;
   options?: string[];
   value?: string;
@@ -31,6 +33,9 @@ export type LumaEventData = {
     isFree: boolean;
     price?: number;
     currency?: string;
+    /** Raw Luma cents (null for free) — used for live register payload */
+    cents?: number | null;
+    requireApproval?: boolean;
   }[];
   formFields: FormField[];
   csrfToken: string | null;
@@ -123,11 +128,15 @@ function extractFormFields(
       const id = String(
         question.id || question.question_id || question.label || Math.random()
       );
+      const qType = String(
+        question.question_type || question.type || question.input_type || "text"
+      );
       push({
         id,
         name: String(question.name || question.id || id),
         label: String(question.label || question.question || "Question"),
-        type: String(question.type || question.input_type || "text"),
+        type: qType,
+        questionType: qType,
         required: Boolean(question.required ?? question.is_required),
         options: Array.isArray(question.options)
           ? question.options.map(String)
@@ -328,9 +337,14 @@ export async function scrapeLumaEvent(
     []) as Record<string, unknown>[];
   const ticketTypes = (Array.isArray(ticketTypesRaw) ? ticketTypesRaw : []).map(
     (t, i) => ({
-      id: String(t.id || t.api_id || `ticket-${i}`),
+      id: String(t.api_id || t.id || `ticket-${i}`),
       name: String(t.name || "General"),
-      isFree: Boolean(t.is_free ?? t.isFree ?? !t.price),
+      isFree:
+        t.type === "free" ||
+        Boolean(t.is_free) ||
+        Boolean(t.isFree) ||
+        (typeof t.cents !== "number" &&
+          !(typeof t.price === "number" && t.price > 0)),
       price:
         typeof t.price === "number"
           ? t.price
@@ -338,21 +352,16 @@ export async function scrapeLumaEvent(
             ? t.cents / 100
             : undefined,
       currency: pickString(t.currency) || undefined,
+      requireApproval: Boolean(t.require_approval ?? t.requireApproval),
+      cents: typeof t.cents === "number" ? t.cents : null,
     })
   );
 
   const formFields = extractFormFields(bundle, $);
   const csrfToken = extractCsrf($, html);
 
-  // Prefer official guest API; fall back to form action
-  const formAction = $("form").first().attr("action");
   const apiId = pickString(event.api_id, event.id, bundle.api_id as string);
-  const submitEndpoint =
-    formAction && formAction.startsWith("http")
-      ? formAction
-      : formAction
-        ? `https://lu.ma${formAction}`
-        : `https://api.lu.ma/event/independent/register`;
+  const submitEndpoint = `https://api.lu.ma/event/register`;
 
   return {
     eventId: apiId || eventId,
@@ -370,7 +379,8 @@ export async function scrapeLumaEvent(
     requiresApproval: Boolean(
       bundle.require_rsvp_approval ||
         event.require_rsvp_approval ||
-        bundle.requires_approval
+        bundle.requires_approval ||
+        ticketTypes.some((t) => t.requireApproval)
     ),
     ticketTypes,
     formFields,
@@ -613,6 +623,27 @@ export async function scrapeOrFallback(
           required: false,
         },
         {
+          id: "github",
+          name: "github",
+          label: "GitHub URL",
+          type: "url",
+          required: false,
+        },
+        {
+          id: "twitter",
+          name: "twitter",
+          label: "Twitter / X URL",
+          type: "url",
+          required: false,
+        },
+        {
+          id: "website",
+          name: "website",
+          label: "Website / Portfolio",
+          type: "url",
+          required: false,
+        },
+        {
           id: "why",
           name: "why",
           label: "Why do you want to attend?",
@@ -621,7 +652,7 @@ export async function scrapeOrFallback(
         },
       ],
       csrfToken: `demo-csrf-${fallback.id}`,
-      submitEndpoint: "https://api.lu.ma/event/independent/register",
+      submitEndpoint: "https://api.lu.ma/event/register",
       sourceUrl: `https://lu.ma/${fallback.id}`,
     };
   }

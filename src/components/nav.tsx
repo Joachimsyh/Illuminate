@@ -10,6 +10,7 @@ import clsx from "clsx";
 const links = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/events", label: "Events" },
+  { href: "/knowledge", label: "Knowledge" },
 ];
 
 export function Nav() {

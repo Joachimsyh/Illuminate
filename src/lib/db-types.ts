@@ -109,6 +109,67 @@ export type EventDetailRow = {
   updatedAt: Date;
 };
 
+export type UserProfileRow = {
+  id: string;
+  userId: string;
+  headline: string | null;
+  bio: string | null;
+  company: string | null;
+  seniority: string | null;
+  skillsJson: string;
+  techStackJson: string;
+  interestsJson: string;
+  locationsJson: string;
+  eventTypesJson: string;
+  keywordsJson: string;
+  rawSource: string;
+  sourceHash: string;
+  selectionsHash: string;
+  linkedinSnapshotJson: string;
+  agent1Provider: string | null;
+  extractedAt: Date | null;
+  postsSyncedAt: Date | null;
+  age: number | null;
+  lifeStatus: string | null;
+  placeOfWorkStudy: string | null;
+  agentSummary: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type ProfilePostRow = {
+  id: string;
+  userId: string;
+  content: string;
+  contentHash: string;
+  source: string;
+  postedAt: Date | null;
+  topicsJson: string;
+  createdAt: Date;
+};
+
+export type KnowledgeNodeRow = {
+  id: string;
+  userId: string;
+  kind: string;
+  key: string;
+  label: string;
+  propsJson: string;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type KnowledgeEdgeRow = {
+  id: string;
+  userId: string;
+  fromNodeId: string;
+  toNodeId: string;
+  relation: string;
+  weight: number;
+  propsJson: string;
+  createdAt: Date;
+};
+
 export const USER_SELECT = `
   id,
   name,
@@ -243,5 +304,66 @@ export const TOPUP_SELECT = `
   chain_id AS "chainId",
   wallet_from AS "walletFrom",
   credited_until AS "creditedUntil",
+  created_at AS "createdAt"
+`;
+
+export const USER_PROFILE_SELECT = `
+  id,
+  user_id AS "userId",
+  headline,
+  bio,
+  company,
+  seniority,
+  skills_json AS "skillsJson",
+  tech_stack_json AS "techStackJson",
+  interests_json AS "interestsJson",
+  locations_json AS "locationsJson",
+  event_types_json AS "eventTypesJson",
+  keywords_json AS "keywordsJson",
+  raw_source AS "rawSource",
+  source_hash AS "sourceHash",
+  selections_hash AS "selectionsHash",
+  linkedin_snapshot_json AS "linkedinSnapshotJson",
+  agent1_provider AS "agent1Provider",
+  extracted_at AS "extractedAt",
+  posts_synced_at AS "postsSyncedAt",
+  age,
+  life_status AS "lifeStatus",
+  place_of_work_study AS "placeOfWorkStudy",
+  agent_summary AS "agentSummary",
+  created_at AS "createdAt",
+  updated_at AS "updatedAt"
+`;
+
+export const PROFILE_POST_SELECT = `
+  id,
+  user_id AS "userId",
+  content,
+  content_hash AS "contentHash",
+  source,
+  posted_at AS "postedAt",
+  topics_json AS "topicsJson",
+  created_at AS "createdAt"
+`;
+
+export const KNOWLEDGE_NODE_SELECT = `
+  id,
+  user_id AS "userId",
+  kind,
+  key,
+  label,
+  props_json AS "propsJson",
+  created_at AS "createdAt",
+  updated_at AS "updatedAt"
+`;
+
+export const KNOWLEDGE_EDGE_SELECT = `
+  id,
+  user_id AS "userId",
+  from_node_id AS "fromNodeId",
+  to_node_id AS "toNodeId",
+  relation,
+  weight,
+  props_json AS "propsJson",
   created_at AS "createdAt"
 `;

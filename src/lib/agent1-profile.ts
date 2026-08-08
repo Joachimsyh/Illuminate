@@ -2,6 +2,7 @@ import { z } from "zod";
 import { llmChat, LlmError } from "@/lib/llm";
 import {
   EVENT_INTERESTS,
+  LIFE_STATUS_OPTIONS,
   PROFILE_SKILLS,
   SENIORITY_OPTIONS,
   TECH_STACK,
@@ -16,6 +17,10 @@ const extractedSchema = z.object({
   headline: z.string().nullable().optional(),
   bio: z.string().nullable().optional(),
   keywords: z.array(z.string()).default([]),
+  age: z.number().int().min(13).max(100).nullable().optional(),
+  life_status: z.string().nullable().optional(),
+  place_of_work_study: z.string().nullable().optional(),
+  agent_summary: z.string().nullable().optional(),
 });
 
 export type Agent1Profile = z.infer<typeof extractedSchema>;
@@ -58,7 +63,11 @@ Rules:
 - keywords: 5–15 lowercase keywords useful for matching Luma event titles/descriptions.
 - Do not invent employers, degrees, or skills not supported by the text or selections.
 - headline: one short line if inferable, else null.
-- bio: 1–2 sentence summary if inferable, else null.
+- bio: 1–2 sentence first-person summary if inferable, else null.
+- age: integer years if clearly stated, else null (never guess).
+- life_status: one of ${LIFE_STATUS_OPTIONS.join(" | ")} if inferable, else null.
+- place_of_work_study: company, university, or school name if inferable, else null.
+- agent_summary: 4–7 sentences in FIRST PERSON ("I …"). Be specific and descriptive: school/employer, focus areas, notable projects or hackathons, tech strengths, and what kinds of Luma events fit. Do not invent facts. Never write third person.
 
 JSON shape:
 {
@@ -69,7 +78,11 @@ JSON shape:
   "event_preferences": string[],
   "headline": string | null,
   "bio": string | null,
-  "keywords": string[]
+  "keywords": string[],
+  "age": number | null,
+  "life_status": string | null,
+  "place_of_work_study": string | null,
+  "agent_summary": string | null
 }`;
 
   const user = `Selected locations: ${input.locations.join(", ") || "(none)"}
@@ -116,6 +129,10 @@ export function mergeAgent1WithSelections(
   headline: string | null;
   bio: string | null;
   keywords: string[];
+  age: number | null;
+  lifeStatus: string | null;
+  placeOfWorkStudy: string | null;
+  agentSummary: string | null;
 } {
   const uniq = (xs: string[]) =>
     Array.from(new Set(xs.map((x) => x.trim()).filter(Boolean)));
@@ -137,6 +154,13 @@ export function mergeAgent1WithSelections(
       ? extracted.seniority
       : extracted.seniority?.trim() || null;
 
+  const lifeStatusRaw = extracted.life_status?.trim() || null;
+  const lifeStatus =
+    lifeStatusRaw &&
+    (LIFE_STATUS_OPTIONS as readonly string[]).includes(lifeStatusRaw)
+      ? lifeStatusRaw
+      : lifeStatusRaw;
+
   return {
     skills,
     techStack,
@@ -146,6 +170,10 @@ export function mergeAgent1WithSelections(
     headline: extracted.headline?.trim() || null,
     bio: extracted.bio?.trim() || null,
     keywords,
+    age: typeof extracted.age === "number" ? extracted.age : null,
+    lifeStatus,
+    placeOfWorkStudy: extracted.place_of_work_study?.trim() || null,
+    agentSummary: extracted.agent_summary?.trim() || extracted.bio?.trim() || null,
   };
 }
 

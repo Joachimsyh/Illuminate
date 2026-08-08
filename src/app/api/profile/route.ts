@@ -1,12 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSession } from "@/lib/auth";
-import { findUserById, updateUser } from "@/lib/repos";
-import { skillsToKeywords } from "@/lib/skills";
-import {
-  mergeAgent1WithSelections,
-  runAgent1Profile,
-} from "@/lib/agent1-profile";
+import { findUserById } from "@/lib/repos";
+import { findUserProfile, listProfilePosts } from "@/lib/knowledge-repos";
+import { syncUserProfileKnowledge } from "@/lib/profile-knowledge";
 import {
   EVENT_INTERESTS,
   EVENT_LOCATIONS,
@@ -19,11 +16,21 @@ function splitPipe(value: string | null | undefined): string[] {
   return value ? value.split("|").filter(Boolean) : [];
 }
 
+function parseJsonArray(raw: string | null | undefined): string[] {
+  try {
+    const v = JSON.parse(raw || "[]");
+    return Array.isArray(v) ? v.map(String).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
 const updateSchema = z.object({
   locations: z.array(z.string()).optional(),
   interests: z.array(z.string()).optional(),
   skills: z.array(z.string()).optional(),
   rawSource: z.string().optional(),
+  writingSamples: z.array(z.string()).optional(),
 });
 
 export async function GET() {
@@ -37,6 +44,9 @@ export async function GET() {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
+  const stored = await findUserProfile(session.user.id);
+  const posts = await listProfilePosts(session.user.id);
+
   return NextResponse.json({
     name: user.name,
     email: user.email,
@@ -44,7 +54,10 @@ export async function GET() {
     locations: splitPipe(user.location),
     interests: splitPipe(user.interests),
     skills: splitPipe(user.skills),
-    rawSource: user.rawSource || "",
+    rawSource: stored?.rawSource || user.rawSource || "",
+    writingSamples: posts.map((p) => p.content),
+    profileCached: Boolean(stored?.extractedAt),
+    extractedAt: stored?.extractedAt || null,
     catalogs: {
       locations: EVENT_LOCATIONS,
       interests: EVENT_INTERESTS,
@@ -88,68 +101,36 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
+  const stored = await findUserProfile(session.user.id);
+  const existingPosts = await listProfilePosts(session.user.id);
+
   const nextLocations = locations ?? splitPipe(existing.location);
   const nextInterests = interests ?? splitPipe(existing.interests);
   const nextSkills = skills ?? splitPipe(existing.skills);
-  const nextRaw = rawSource ?? existing.rawSource ?? "";
+  const nextRaw = rawSource ?? stored?.rawSource ?? existing.rawSource ?? "";
+  const nextSamples =
+    parsed.data.writingSamples?.map((s) => s.trim()).filter(Boolean) ??
+    existingPosts.map((p) => p.content);
 
-  let techStack = existing.techStack || "";
-  let seniority = existing.seniority;
-  let eventTypes = existing.eventTypes || "";
-  let headline = existing.headline;
-  let bio = existing.bio;
-  let agentKeywords = skillsToKeywords([
-    ...nextSkills,
-    ...nextInterests,
-    ...nextLocations,
-  ]);
-
-  if (nextRaw.length >= 40) {
-    try {
-      const { profile } = await runAgent1Profile({
-        locations: nextLocations,
-        interests: nextInterests,
-        skills: nextSkills,
-        rawSource: nextRaw,
-      });
-      const merged = mergeAgent1WithSelections(profile, {
-        locations: nextLocations,
-        interests: nextInterests,
-        skills: nextSkills,
-        rawSource: nextRaw,
-      });
-      techStack = merged.techStack.join("|");
-      seniority = merged.seniority;
-      eventTypes = merged.eventTypes.join("|");
-      headline = merged.headline || headline;
-      bio = merged.bio || bio;
-      agentKeywords = merged.keywords.join(",");
-    } catch (err) {
-      console.warn(
-        "[profile] Agent 1 failed:",
-        err instanceof Error ? err.message : err
-      );
-    }
-  }
-
-  const user = await updateUser(session.user.id, {
-    location: nextLocations.join("|"),
-    interests: nextInterests.join("|"),
-    skills: nextSkills.join("|"),
+  const sync = await syncUserProfileKnowledge({
+    userId: session.user.id,
+    name: existing.name,
+    company: existing.company,
+    locations: nextLocations,
+    interests: nextInterests,
+    skills: nextSkills,
     rawSource: nextRaw,
-    techStack,
-    seniority,
-    eventTypes,
-    headline,
-    bio,
-    agentKeywords,
+    writingSamples: nextSamples,
   });
 
   return NextResponse.json({
     ok: true,
-    locations: splitPipe(user.location),
-    interests: splitPipe(user.interests),
-    skills: splitPipe(user.skills),
-    rawSource: user.rawSource || "",
+    locations: parseJsonArray(sync.profile.locationsJson),
+    interests: parseJsonArray(sync.profile.interestsJson),
+    skills: parseJsonArray(sync.profile.skillsJson),
+    rawSource: sync.profile.rawSource || "",
+    profileCached: sync.reused,
+    newPosts: sync.newPosts,
+    agent1Provider: sync.provider,
   });
 }

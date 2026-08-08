@@ -4,7 +4,7 @@ Hackathon MVP that helps you find and apply to public Luma events.
 
 - LinkedIn OAuth or email/password auth
 - Scrapes public `luma.com` city/topic pages into PostgreSQL
-- Server-side apply to Luma registration forms
+- Server-side apply when Luma allows it; **browser assist** (Playwright) autofills and lets you solve Cloudflare captcha
 - Next.js 14 UI + optional agent worker
 - **PostgreSQL via `pg`** (no Prisma)
 
@@ -21,6 +21,7 @@ cp .env.example .env
 
 # 3) App
 npm install
+npm run playwright:install   # Chromium for browser-assisted apply
 npm run dev
 ```
 

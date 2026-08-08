@@ -3,9 +3,14 @@ import { z } from "zod";
 import { getSession } from "@/lib/auth";
 import { autoApply } from "@/lib/auto-apply";
 
+export const runtime = "nodejs";
+/** Browser assist can wait several minutes for captcha. */
+export const maxDuration = 300;
+
 const bodySchema = z.object({
   eventId: z.string().min(1),
   answers: z.record(z.string()).optional(),
+  browserAssist: z.boolean().optional(),
 });
 
 export async function POST(request: Request) {
@@ -34,6 +39,7 @@ export async function POST(request: Request) {
       userId: session.user.id,
       eventId: parsed.data.eventId,
       answers: parsed.data.answers,
+      browserAssist: parsed.data.browserAssist === true,
     });
 
     return NextResponse.json(result, {

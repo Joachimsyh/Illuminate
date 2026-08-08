@@ -8,6 +8,7 @@ import { motion } from "framer-motion";
 import { Sparkles } from "lucide-react";
 import { MagneticButton, FadeIn } from "@/components/motion";
 import { PasswordInput } from "@/components/password-input";
+import { LinkedInAuthButton } from "@/components/linkedin-auth-button";
 
 export default function SignupPage() {
   const router = useRouter();
@@ -45,7 +46,7 @@ export default function SignupPage() {
         email: email.trim().toLowerCase(),
         password,
         redirect: false,
-        callbackUrl: "/dashboard",
+        callbackUrl: "/onboarding",
       });
 
       if (signInResult?.error) {
@@ -53,7 +54,7 @@ export default function SignupPage() {
         return;
       }
 
-      router.push("/dashboard");
+      router.push("/onboarding");
       router.refresh();
     } catch {
       setError("Network error — try again");
@@ -73,66 +74,73 @@ export default function SignupPage() {
           </div>
           <h1 className="font-display text-4xl text-mist-100">Join Illuminate</h1>
           <p className="mt-2 text-sm text-mist-400">
-            Create an account with email, or{" "}
-            <Link href="/login" className="text-lumen-300 hover:underline">
-              sign in with LinkedIn
-            </Link>
-            .
+            Sign up with LinkedIn (recommended) or email. LinkedIn prefills your
+            Luma registration name and email.
           </p>
         </FadeIn>
 
         <FadeIn delay={0.1}>
-          <motion.form
-            onSubmit={handleSubmit}
-            className="glass mt-8 space-y-3 rounded-3xl p-7"
-          >
-            <label className="block text-xs text-mist-400">
-              Name
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-                className="mt-1.5 w-full rounded-xl border border-white/10 bg-ink-900/80 px-3.5 py-2.5 text-sm text-mist-100 outline-none focus:ring-2 focus:ring-lumen-400/40"
-              />
-            </label>
-            <label className="block text-xs text-mist-400">
-              Email
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                className="mt-1.5 w-full rounded-xl border border-white/10 bg-ink-900/80 px-3.5 py-2.5 text-sm text-mist-100 outline-none focus:ring-2 focus:ring-lumen-400/40"
-              />
-            </label>
-            <label className="block text-xs text-mist-400">
-              Password
-              <PasswordInput
-                value={password}
-                onChange={setPassword}
-                required
-                minLength={8}
-              />
-            </label>
-            <label className="block text-xs text-mist-400">
-              Confirm password
-              <PasswordInput
-                value={confirm}
-                onChange={setConfirm}
-                required
-                minLength={8}
-              />
-            </label>
+          <div className="glass mt-8 space-y-4 rounded-3xl p-7">
+            <LinkedInAuthButton
+              callbackUrl="/onboarding"
+              label="Sign up with LinkedIn"
+            />
 
-            {error && <p className="text-sm text-rose-300">{error}</p>}
+            <div className="flex items-center gap-3 text-xs text-mist-400">
+              <span className="h-px flex-1 bg-white/10" />
+              or email
+              <span className="h-px flex-1 bg-white/10" />
+            </div>
 
-            <MagneticButton
-              type="submit"
-              disabled={loading}
-              className="w-full rounded-xl bg-lumen-400 px-4 py-3.5 text-sm font-semibold text-ink-950 disabled:opacity-60"
-            >
-              {loading ? "Creating account…" : "Sign up"}
-            </MagneticButton>
+            <motion.form onSubmit={handleSubmit} className="space-y-3">
+              <label className="block text-xs text-mist-400">
+                Name
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                  className="mt-1.5 w-full rounded-xl border border-white/10 bg-ink-900/80 px-3.5 py-2.5 text-sm text-mist-100 outline-none focus:ring-2 focus:ring-lumen-400/40"
+                />
+              </label>
+              <label className="block text-xs text-mist-400">
+                Email
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  className="mt-1.5 w-full rounded-xl border border-white/10 bg-ink-900/80 px-3.5 py-2.5 text-sm text-mist-100 outline-none focus:ring-2 focus:ring-lumen-400/40"
+                />
+              </label>
+              <label className="block text-xs text-mist-400">
+                Password
+                <PasswordInput
+                  value={password}
+                  onChange={setPassword}
+                  required
+                  minLength={8}
+                />
+              </label>
+              <label className="block text-xs text-mist-400">
+                Confirm password
+                <PasswordInput
+                  value={confirm}
+                  onChange={setConfirm}
+                  required
+                  minLength={8}
+                />
+              </label>
+
+              {error && <p className="text-sm text-rose-300">{error}</p>}
+
+              <MagneticButton
+                type="submit"
+                disabled={loading}
+                className="w-full rounded-xl bg-lumen-400 px-4 py-3.5 text-sm font-semibold text-ink-950 disabled:opacity-60"
+              >
+                {loading ? "Creating account…" : "Sign up with email"}
+              </MagneticButton>
+            </motion.form>
 
             <p className="text-center text-sm text-mist-400">
               Already have an account?{" "}
@@ -140,7 +148,7 @@ export default function SignupPage() {
                 Sign in
               </Link>
             </p>
-          </motion.form>
+          </div>
         </FadeIn>
       </div>
     </div>
