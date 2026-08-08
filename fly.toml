@@ -1,0 +1,37 @@
+# Fly.io deploy config — https://fly.io
+#   fly launch --no-deploy
+#   fly postgres create
+#   fly secrets set NEXTAUTH_SECRET=... NEXTAUTH_URL=https://YOUR_APP.fly.dev
+#   fly deploy
+
+app = "luma-autoapply"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "3000"
+  HOSTNAME = "0.0.0.0"
+  DEMO_MODE = "true"
+  LUMA_DEMO_SUBMIT = "true"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "45s"
+    method = "GET"
+    path = "/api/health"
+
+[[vm]]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1
