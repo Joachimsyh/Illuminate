@@ -577,7 +577,7 @@ export async function autoApply(input: ApplyInput): Promise<ApplyResult> {
     };
   }
 
-  const { event, answers, formFields } = prepared;
+  const { event, answers, formFields, user } = prepared;
   validateCsrf(event);
 
   const missing = formFields
@@ -602,9 +602,22 @@ export async function autoApply(input: ApplyInput): Promise<ApplyResult> {
 
   // Path 2: browser-assisted apply (user solves Cloudflare Turnstile)
   if (input.browserAssist) {
+    // Seed fill keys Luma shows as extra inputs (e.g. job title next to company)
+    // without changing the server registration payload logic.
+    const browserAnswers: Record<string, string> = {
+      ...answers,
+      headline: answers.headline || user.headline || user.seniority || "",
+      job_title:
+        answers.job_title ||
+        answers.title ||
+        user.headline ||
+        user.seniority ||
+        user.lifeStatus ||
+        "",
+    };
     const browser = await browserAssistLumaApply({
       eventUrl: event.sourceUrl,
-      answers,
+      answers: browserAnswers,
       formFields,
     });
 
