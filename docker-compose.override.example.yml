@@ -1,0 +1,13 @@
+# Optional local overrides — copy to docker-compose.override.yml
+# (Compose auto-loads docker-compose.override.yml)
+#
+#   cp docker-compose.override.example.yml docker-compose.override.yml
+
+services:
+  web:
+    environment:
+      NEXTAUTH_URL: http://localhost:3000
+      # LINKEDIN_CLIENT_ID: your_id
+      # LINKEDIN_CLIENT_SECRET: your_secret
+    ports:
+      - "3000:3000"

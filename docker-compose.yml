@@ -1,0 +1,73 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: luma
+      POSTGRES_PASSWORD: luma
+      POSTGRES_DB: luma_autoapply
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U luma -d luma_autoapply"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # Set to 1 if your network does SSL interception (corporate proxy / AV)
+        SSL_NO_VERIFY: ${SSL_NO_VERIFY:-0}
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.docker
+    environment:
+      DATABASE_URL: postgresql://luma:luma@db:5432/luma_autoapply?schema=public
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      # RESEND_API_KEY + NODE_TLS_REJECT_UNAUTHORIZED come from env_file (.env.docker)
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 45s
+
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SSL_NO_VERIFY: ${SSL_NO_VERIFY:-0}
+    restart: unless-stopped
+    profiles: ["agent"]
+    env_file:
+      - .env.docker
+    environment:
+      DATABASE_URL: postgresql://luma:luma@db:5432/luma_autoapply?schema=public
+      AGENT_INTERVAL_MS: ${AGENT_INTERVAL_MS:-3600000}
+    depends_on:
+      db:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+    entrypoint: ["node", "scripts/docker-entrypoint.js"]
+    command: ["npx", "tsx", "scripts/agent-worker.ts"]
+
+volumes:
+  postgres_data:
