@@ -216,3 +216,16 @@ Notes:
 - The script posts to Bright Data dataset id `gd_l1viktl72bvl7bjuj0` and sets `limit_per_input` to `10` by default.
 - The command prints results to stdout; redirect to a file to save, e.g. `./scripts/linkedin_scrape.sh urls.json > output.json`.
 
+### Keep original posts only
+
+Bright Data returns a mixed `activity` feed (called `posts` in older exports), including likes, comments, shares, and
+reposts. Filter a saved response before consuming it as authored posts:
+
+```bash
+python3 scripts/filter_reposts.py linkedin_output.json linkedin_posts_only.json
+```
+
+The filter retains activity marked `Posted by …` (and entries with no interaction marker) and removes activity marked
+liked, commented, shared, reposted, or reshared. It accepts both a normal JSON array and consecutive JSON objects
+produced by some shell redirects.
+
