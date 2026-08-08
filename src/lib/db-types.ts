@@ -23,6 +23,7 @@ export type UserRow = {
   onboardingStep: number;
   agentEnabled: boolean;
   agentKeywords: string;
+  premiumUntil: Date | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -133,6 +134,7 @@ export const USER_SELECT = `
   onboarding_step AS "onboardingStep",
   agent_enabled AS "agentEnabled",
   agent_keywords AS "agentKeywords",
+  premium_until AS "premiumUntil",
   created_at AS "createdAt",
   updated_at AS "updatedAt"
 `;
@@ -216,4 +218,30 @@ export const LUMA_CONNECTION_SELECT = `
   preview_json AS "previewJson",
   created_at AS "createdAt",
   updated_at AS "updatedAt"
+`;
+
+export type TopUpRow = {
+  id: string;
+  userId: string;
+  packageId: string;
+  amountUsdc: number;
+  months: number;
+  txHash: string;
+  chainId: number;
+  walletFrom: string;
+  creditedUntil: Date | null;
+  createdAt: Date;
+};
+
+export const TOPUP_SELECT = `
+  id,
+  user_id AS "userId",
+  package_id AS "packageId",
+  amount_usdc AS "amountUsdc",
+  months,
+  tx_hash AS "txHash",
+  chain_id AS "chainId",
+  wallet_from AS "walletFrom",
+  credited_until AS "creditedUntil",
+  created_at AS "createdAt"
 `;

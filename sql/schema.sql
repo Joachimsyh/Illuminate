@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS users (
   onboarding_step      INTEGER NOT NULL DEFAULT 1,
   agent_enabled        BOOLEAN NOT NULL DEFAULT FALSE,
   agent_keywords       TEXT NOT NULL DEFAULT 'ai,hackathon,startup,web3',
+  premium_until        TIMESTAMPTZ,
   created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -173,3 +174,23 @@ CREATE TABLE IF NOT EXISTS event_details (
 );
 CREATE INDEX IF NOT EXISTS event_details_starts_at_idx ON event_details(starts_at);
 CREATE INDEX IF NOT EXISTS event_details_luma_api_id_idx ON event_details(luma_api_id);
+
+-- Premium top-up ledger (x402 / USDC payments on Monad)
+CREATE TABLE IF NOT EXISTS topups (
+  id              TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  package_id      TEXT NOT NULL,
+  amount_usdc     DOUBLE PRECISION NOT NULL,
+  months          INTEGER NOT NULL,
+  tx_hash         TEXT NOT NULL,
+  chain_id        INTEGER NOT NULL,
+  wallet_from     TEXT NOT NULL,
+  credited_until  TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (user_id, tx_hash)
+);
+CREATE INDEX IF NOT EXISTS topups_user_id_idx ON topups(user_id);
+CREATE INDEX IF NOT EXISTS topups_created_at_idx ON topups(created_at);
+
+-- Idempotent migration for databases created before premium top-ups existed.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS premium_until TIMESTAMPTZ;

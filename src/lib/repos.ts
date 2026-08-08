@@ -4,11 +4,13 @@ import {
   EVENT_DETAIL_SELECT,
   EVENT_SELECT,
   LUMA_CONNECTION_SELECT,
+  TOPUP_SELECT,
   USER_SELECT,
   type ApplicationRow,
   type EventDetailRow,
   type EventRow,
   type LumaConnectionRow,
+  type TopUpRow,
   type UserRow,
 } from "@/lib/db-types";
 
@@ -82,6 +84,7 @@ export async function updateUser(
     onboardingStep: number;
     agentEnabled: boolean;
     agentKeywords: string;
+    premiumUntil: Date | null;
   }>
 ): Promise<UserRow> {
   const sets: string[] = ["updated_at = NOW()"];
@@ -114,6 +117,7 @@ export async function updateUser(
   if ("onboardingStep" in data) add("onboarding_step", data.onboardingStep);
   if ("agentEnabled" in data) add("agent_enabled", data.agentEnabled);
   if ("agentKeywords" in data) add("agent_keywords", data.agentKeywords);
+  if ("premiumUntil" in data) add("premium_until", data.premiumUntil);
 
   params.push(id);
   return (await queryOne<UserRow>(
@@ -477,4 +481,51 @@ export async function upsertEventDetail(data: {
       data.payloadJson,
     ]
   );
+}
+
+export async function findTopUpByTxHash(
+  userId: string,
+  txHash: string
+): Promise<TopUpRow | null> {
+  return queryOne<TopUpRow>(
+    `SELECT ${TOPUP_SELECT} FROM topups WHERE user_id = $1 AND tx_hash = $2`,
+    [userId, txHash]
+  );
+}
+
+export async function listTopUps(userId: string): Promise<TopUpRow[]> {
+  return query<TopUpRow>(
+    `SELECT ${TOPUP_SELECT} FROM topups WHERE user_id = $1 ORDER BY created_at DESC`,
+    [userId]
+  );
+}
+
+export async function createTopUp(data: {
+  userId: string;
+  packageId: string;
+  amountUsdc: number;
+  months: number;
+  txHash: string;
+  chainId: number;
+  walletFrom: string | null;
+  creditedUntil: Date;
+}): Promise<TopUpRow> {
+  const rows = await query<TopUpRow>(
+    `INSERT INTO topups
+       (id, user_id, package_id, amount_usdc, months, tx_hash, chain_id, wallet_from, credited_until)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     RETURNING ${TOPUP_SELECT}`,
+    [
+      newId(),
+      data.userId,
+      data.packageId,
+      data.amountUsdc,
+      data.months,
+      data.txHash,
+      data.chainId,
+      data.walletFrom,
+      data.creditedUntil,
+    ]
+  );
+  return rows[0]!;
 }
