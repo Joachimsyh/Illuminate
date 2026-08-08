@@ -5,6 +5,7 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { MapPin, RefreshCw, Sparkles, Users } from "lucide-react";
 import { FadeIn, MagneticButton, Stagger, StaggerItem } from "@/components/motion";
+import { formatEventWhen } from "@/lib/format-date";
 
 type EventItem = {
   id: string;
@@ -50,6 +51,11 @@ export function EventsClient({
         }
         setEvents(data.events || []);
         if (data.warning) setWarning(data.warning);
+        else if (typeof data.added === "number") {
+          setWarning(
+            `Scraped pages · added ${data.added} new event(s), skipped ${data.skipped ?? 0} existing.`
+          );
+        }
       } catch (err) {
         setError(
           err instanceof Error ? err.message : "Network error while refreshing"
@@ -70,7 +76,8 @@ export function EventsClient({
               Closest matching events
             </h1>
             <p className="mt-2 max-w-xl text-mist-300">
-              Live from Luma city & topic pages for your locations and interests.
+            Live from luma.com city & topic pages — new events are saved to the
+            database; duplicates are skipped.
             </p>
           </div>
           <MagneticButton
@@ -161,15 +168,7 @@ export function EventsClient({
                   </h2>
                   <div className="mt-3 flex flex-wrap gap-3 text-xs text-mist-400">
                     {event.startAt && (
-                      <span>
-                        {new Date(event.startAt).toLocaleDateString(undefined, {
-                          weekday: "short",
-                          month: "short",
-                          day: "numeric",
-                          hour: "numeric",
-                          minute: "2-digit",
-                        })}
-                      </span>
+                      <span>{formatEventWhen(event.startAt)}</span>
                     )}
                     {event.location && (
                       <span className="inline-flex items-center gap-1">

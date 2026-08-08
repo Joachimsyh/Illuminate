@@ -1,10 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",
-  serverExternalPackages: ["pdf-parse", "mammoth"],
   experimental: {
-    serverComponentsExternalPackages: ["pdf-parse", "mammoth"],
+    serverComponentsExternalPackages: ["pdf-parse", "mammoth", "pg"],
   },
+  serverExternalPackages: ["pdf-parse", "mammoth", "pg"],
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "images.unsplash.com" },

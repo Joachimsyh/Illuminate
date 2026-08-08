@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, Linkedin, Mail, Sparkles } from "lucide-react";
 import { MagneticButton, FadeIn } from "@/components/motion";
+import { PasswordInput } from "@/components/password-input";
 
 type Step = "choose" | "password";
 
@@ -181,12 +182,10 @@ function LoginFormInner() {
 
                   <label className="block text-xs text-mist-400">
                     Password
-                    <input
-                      type="password"
+                    <PasswordInput
                       value={password}
-                      onChange={(e) => setPassword(e.target.value)}
+                      onChange={setPassword}
                       autoFocus
-                      className="mt-1.5 w-full rounded-xl border border-white/10 bg-ink-900/80 px-3.5 py-2.5 text-sm text-mist-100 outline-none focus:ring-2 focus:ring-lumen-400/40"
                       required
                     />
                   </label>

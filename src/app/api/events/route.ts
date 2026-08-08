@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { findUserById } from "@/lib/repos";
 import { discoverEventsForProfile } from "@/lib/luma-scraper";
 
 export const runtime = "nodejs";
@@ -20,9 +20,7 @@ export async function GET(request: Request) {
   const mode = refresh ? "all" : searchParams.get("mode") === "all" ? "all" : "match";
 
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
-    });
+    const user = await findUserById(session.user.id);
 
     const locations = splitPipe(user?.location);
     const interests = splitPipe(user?.interests);
@@ -56,6 +54,8 @@ export async function GET(request: Request) {
       interests,
       attempts: result.attempts,
       warning: result.error || null,
+      added: result.added ?? 0,
+      skipped: result.skipped ?? 0,
     });
   } catch (err) {
     return NextResponse.json(

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { findUserById } from "@/lib/repos";
 import { ProfileClient } from "./profile-client";
 
 export const dynamic = "force-dynamic";
@@ -13,9 +13,7 @@ export default async function ProfilePage() {
   const session = await getSession();
   if (!session?.user?.id) redirect("/login");
 
-  const user = await prisma.user.findUnique({
-    where: { id: session.user.id },
-  });
+  const user = await findUserById(session.user.id);
   if (!user) redirect("/login");
 
   return (

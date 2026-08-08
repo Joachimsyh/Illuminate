@@ -1,18 +1,26 @@
-import { prisma } from "../src/lib/prisma";
+import { pool } from "../src/lib/db";
+import {
+  createUser,
+  findUserByEmail,
+  updateUser,
+} from "../src/lib/repos";
 import { autoApply } from "../src/lib/auto-apply";
 
 async function main() {
-  const user = await prisma.user.upsert({
-    where: { email: "smoke@luma-autoapply.dev" },
-    update: {},
-    create: {
-      email: "smoke@luma-autoapply.dev",
+  const email = "smoke@luma-autoapply.dev";
+  let user = await findUserByEmail(email);
+  if (!user) {
+    user = await createUser({
+      email,
       name: "Smoke Tester",
-      headline: "Engineer",
-      company: "Illuminate",
-      bio: "Testing auto-apply pipeline",
       linkedinId: "smoke-tester",
-    },
+    });
+  }
+  user = await updateUser(user.id, {
+    headline: "Engineer",
+    company: "Illuminate",
+    bio: "Testing auto-apply pipeline",
+    linkedinId: "smoke-tester",
   });
 
   const result = await autoApply({
@@ -28,4 +36,4 @@ main()
     console.error(e);
     process.exit(1);
   })
-  .finally(() => prisma.$disconnect());
+  .finally(() => pool.end());

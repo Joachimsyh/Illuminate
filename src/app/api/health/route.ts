@@ -1,24 +1,16 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-
-export const dynamic = "force-dynamic";
+import { pingDb } from "@/lib/db";
 
 export async function GET() {
   try {
-    await prisma.$queryRaw`SELECT 1`;
-    return NextResponse.json({
-      ok: true,
-      service: "illuminate",
-      db: "up",
-      time: new Date().toISOString(),
-    });
-  } catch {
+    await pingDb();
+    return NextResponse.json({ ok: true, db: "up" });
+  } catch (err) {
     return NextResponse.json(
       {
         ok: false,
-        service: "illuminate",
         db: "down",
-        time: new Date().toISOString(),
+        message: err instanceof Error ? err.message : "db error",
       },
       { status: 503 }
     );

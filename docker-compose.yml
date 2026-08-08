@@ -9,9 +9,16 @@ services:
       # Local hackathon: allow host → published-port connections (Docker Desktop SCRAM quirks)
       POSTGRES_HOST_AUTH_METHOD: trust
     ports:
-      - "5433:5432"
+      # Use 5434 to avoid clashing with a local Windows Postgres often on 5433/5432
+      - "5434:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./sql/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+    command:
+      - postgres
+      - -c
+      - hba_file=/etc/postgresql/pg_hba.conf
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U luma -d luma_autoapply"]
       interval: 5s
@@ -31,7 +38,7 @@ services:
     env_file:
       - .env.docker
     environment:
-      DATABASE_URL: postgresql://luma:luma@db:5432/luma_autoapply?schema=public
+      DATABASE_URL: postgresql://luma:luma@db:5432/luma_autoapply
       NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
       # RESEND_API_KEY + NODE_TLS_REJECT_UNAUTHORIZED come from env_file (.env.docker)
     depends_on:
@@ -61,7 +68,7 @@ services:
     env_file:
       - .env.docker
     environment:
-      DATABASE_URL: postgresql://luma:luma@db:5432/luma_autoapply?schema=public
+      DATABASE_URL: postgresql://luma:luma@db:5432/luma_autoapply
       AGENT_INTERVAL_MS: ${AGENT_INTERVAL_MS:-3600000}
     depends_on:
       db:

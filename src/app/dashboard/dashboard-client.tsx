@@ -13,6 +13,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { FadeIn, MagneticButton, Stagger, StaggerItem } from "@/components/motion";
+import { formatDateTime } from "@/lib/format-date";
 
 type Application = {
   id: string;
@@ -173,7 +174,7 @@ export function DashboardClient({ user, stats, applications, eventsHref }: Props
                           {app.eventTitle}
                         </Link>
                         <p className="mt-0.5 text-xs text-mist-400">
-                          {new Date(app.appliedAt).toLocaleString()} ·{" "}
+                          {formatDateTime(app.appliedAt)} ·{" "}
                           {app.message}
                         </p>
                       </div>
@@ -284,12 +285,6 @@ export function DashboardClient({ user, stats, applications, eventsHref }: Props
                   ))}
                 </div>
               )}
-              <Link
-                href="/onboarding"
-                className="mt-3 inline-block text-xs text-lumen-300 underline-offset-4 hover:underline"
-              >
-                Edit interests
-              </Link>
             </div>
           </section>
         </FadeIn>

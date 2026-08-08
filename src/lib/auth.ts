@@ -2,10 +2,16 @@ import type { NextAuthOptions } from "next-auth";
 import { getServerSession } from "next-auth";
 import LinkedInProvider from "next-auth/providers/linkedin";
 import CredentialsProvider from "next-auth/providers/credentials";
-import { PrismaAdapter } from "@auth/prisma-adapter";
-import type { Adapter } from "next-auth/adapters";
-import { prisma } from "@/lib/prisma";
+import { PostgresAdapter } from "@/lib/auth-adapter";
 import { verifyPassword } from "@/lib/password";
+import {
+  createLoginSession,
+  createSessionRow,
+  findUserByEmail,
+  findUserById,
+  updateUser,
+  upsertOAuthToken,
+} from "@/lib/repos";
 
 const hasLinkedIn =
   Boolean(process.env.LINKEDIN_CLIENT_ID) &&
@@ -18,28 +24,23 @@ async function recordLoginSession(
 ) {
   const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
-  await prisma.loginSession.create({
-    data: {
-      userId,
-      provider,
-      userAgent: meta?.userAgent?.slice(0, 500) || null,
-      ip: meta?.ip?.slice(0, 100) || null,
-      expiresAt,
-    },
+  await createLoginSession({
+    userId,
+    provider,
+    userAgent: meta?.userAgent?.slice(0, 500) || null,
+    ip: meta?.ip?.slice(0, 100) || null,
+    expiresAt,
   });
 
-  // Also keep NextAuth Session row for adapter-backed session history
-  await prisma.session.create({
-    data: {
-      sessionToken: `sess_${userId}_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-      userId,
-      expires: expiresAt,
-    },
+  await createSessionRow({
+    sessionToken: `sess_${userId}_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+    userId,
+    expires: expiresAt,
   });
 }
 
 export const authOptions: NextAuthOptions = {
-  adapter: PrismaAdapter(prisma) as Adapter,
+  adapter: PostgresAdapter(),
   session: {
     strategy: "jwt",
     maxAge: 30 * 24 * 60 * 60,
@@ -85,7 +86,7 @@ export const authOptions: NextAuthOptions = {
         const password = credentials?.password || "";
         if (!email || !password) return null;
 
-        const user = await prisma.user.findUnique({ where: { email } });
+        const user = await findUserByEmail(email);
         if (!user?.passwordHash) return null;
 
         const valid = await verifyPassword(password, user.passwordHash);
@@ -116,40 +117,25 @@ export const authOptions: NextAuthOptions = {
       }
 
       if (account?.access_token && token.userId) {
-        await prisma.oAuthToken.upsert({
-          where: { userId: token.userId as string },
-          update: {
-            accessToken: account.access_token,
-            refreshToken: account.refresh_token ?? null,
-            expiresAt: account.expires_at
-              ? new Date(account.expires_at * 1000)
-              : null,
-            provider: account.provider,
-          },
-          create: {
-            userId: token.userId as string,
-            accessToken: account.access_token,
-            refreshToken: account.refresh_token ?? null,
-            expiresAt: account.expires_at
-              ? new Date(account.expires_at * 1000)
-              : null,
-            provider: account.provider,
-          },
+        await upsertOAuthToken({
+          userId: token.userId as string,
+          accessToken: account.access_token,
+          refreshToken: account.refresh_token ?? null,
+          expiresAt: account.expires_at
+            ? new Date(account.expires_at * 1000)
+            : null,
+          provider: account.provider,
         });
 
         if (account.provider === "linkedin" && account.providerAccountId) {
-          await prisma.user.update({
-            where: { id: token.userId as string },
-            data: { linkedinId: account.providerAccountId },
+          await updateUser(token.userId as string, {
+            linkedinId: account.providerAccountId,
           });
         }
       }
 
       if (token.userId) {
-        const dbUser = await prisma.user.findUnique({
-          where: { id: token.userId as string },
-          select: { onboardingCompleted: true },
-        });
+        const dbUser = await findUserById(token.userId as string);
         token.onboardingCompleted = dbUser?.onboardingCompleted ?? false;
 
         if (trigger === "update" && dbUser) {
@@ -163,19 +149,7 @@ export const authOptions: NextAuthOptions = {
       if (session.user && token.userId) {
         session.user.id = token.userId as string;
 
-        const dbUser = await prisma.user.findUnique({
-          where: { id: token.userId as string },
-          select: {
-            headline: true,
-            company: true,
-            location: true,
-            bio: true,
-            skills: true,
-            onboardingCompleted: true,
-            agentEnabled: true,
-            agentKeywords: true,
-          },
-        });
+        const dbUser = await findUserById(token.userId as string);
 
         if (dbUser) {
           session.user.headline = dbUser.headline;
@@ -193,7 +167,6 @@ export const authOptions: NextAuthOptions = {
       return session;
     },
     async redirect({ url, baseUrl }) {
-      // After auth, prefer dashboard; onboarding gate handles first-time users
       if (url.startsWith("/")) {
         if (url === "/login" || url.startsWith("/login?")) {
           return `${baseUrl}/dashboard`;

@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Sparkles } from "lucide-react";
 import { MagneticButton, FadeIn } from "@/components/motion";
+import { PasswordInput } from "@/components/password-input";
 
 export default function SignupPage() {
   const router = useRouter();
@@ -106,24 +107,20 @@ export default function SignupPage() {
             </label>
             <label className="block text-xs text-mist-400">
               Password
-              <input
-                type="password"
+              <PasswordInput
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={setPassword}
                 required
                 minLength={8}
-                className="mt-1.5 w-full rounded-xl border border-white/10 bg-ink-900/80 px-3.5 py-2.5 text-sm text-mist-100 outline-none focus:ring-2 focus:ring-lumen-400/40"
               />
             </label>
             <label className="block text-xs text-mist-400">
               Confirm password
-              <input
-                type="password"
+              <PasswordInput
                 value={confirm}
-                onChange={(e) => setConfirm(e.target.value)}
+                onChange={setConfirm}
                 required
                 minLength={8}
-                className="mt-1.5 w-full rounded-xl border border-white/10 bg-ink-900/80 px-3.5 py-2.5 text-sm text-mist-100 outline-none focus:ring-2 focus:ring-lumen-400/40"
               />
             </label>
 

@@ -11,6 +11,7 @@ type ApplyResponse = {
   message: string;
   demo?: boolean;
   error?: string;
+  filledAnswers?: Record<string, string>;
 };
 
 export function ApplyButton({
@@ -59,7 +60,7 @@ export function ApplyButton({
           {loading ? (
             <>
               <Loader2 className="h-5 w-5 animate-spin" />
-              Scraping form & submitting…
+              Scraping form, filling from profile…
             </>
           ) : success ? (
             <>
@@ -100,6 +101,19 @@ export function ApplyButton({
                   session for live registration.
                 </p>
               )}
+              {result.filledAnswers &&
+                Object.keys(result.filledAnswers).length > 0 && (
+                  <ul className="mt-2 space-y-1 text-xs opacity-80">
+                    {Object.entries(result.filledAnswers)
+                      .slice(0, 8)
+                      .map(([k, v]) => (
+                        <li key={k}>
+                          <span className="opacity-60">{k}:</span> {v.slice(0, 120)}
+                          {v.length > 120 ? "…" : ""}
+                        </li>
+                      ))}
+                  </ul>
+                )}
             </div>
           </motion.div>
         )}
